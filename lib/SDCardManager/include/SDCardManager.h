@@ -4,6 +4,9 @@
 #include <vector>
 #include <string>
 #include <SdFat.h>
+#ifdef XTEINK_X4_PRO
+#include "SdmmcBlockDevice.h"
+#endif
 
 class SDCardManager {
  public:
@@ -42,8 +45,10 @@ class SDCardManager {
   bool openFileForWrite(const char* moduleName, const String& path, FsFile& file);
   bool removeDir(const char* path);
 
+#ifndef XTEINK_X4_PRO
   // Raw block-level access — used by USB MSC. Returns nullptr if not initialized.
   SdCard* getCard() { return initialized ? sd.card() : nullptr; }
+#endif
 
  static SDCardManager& getInstance() { return instance; }
 
@@ -53,7 +58,12 @@ class SDCardManager {
   bool ensureReady();
   bool initialized = false;
   bool hasCard = false;  // true after first successful begin() — distinguishes sleep from no card
+#ifdef XTEINK_X4_PRO
+  SdmmcBlockDevice dev;
+  FsVolume sd;  // same open/exists/mkdir/... API as SdFat, on the SDMMC block device
+#else
   SdFat sd;
+#endif
 };
 
 #define SdMan SDCardManager::getInstance()

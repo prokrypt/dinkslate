@@ -145,10 +145,22 @@ void EInkDisplay::begin() {
 
   if (Serial) Serial.printf("[%lu]   Initializing e-ink display driver...\n", millis());
 
+#ifdef XTEINK_X4_PRO
+  // The controller probe bit-bangs the bus, so take the pins back from SPI first.
+  SPI.end();
+  uc8179 = ucProbe();
+  if (Serial) Serial.printf("[%lu]   Controller: %s\n", millis(), uc8179 ? "UC8179" : "SSD1677");
+#endif
+
   // Initialize SPI with custom pins
   SPI.begin(_sclk, -1, _mosi, _cs);
+#ifdef XTEINK_X4_PRO
+  // X4 Pro wiring is only proven at the 10 MHz freeink-sdk uses for this board.
+  spiSettings = SPISettings(10000000, MSBFIRST, SPI_MODE0);
+#else
   spiSettings = SPISettings(40000000, MSBFIRST, SPI_MODE0);  // MODE0 is standard for SSD1677
-  if (Serial) Serial.printf("[%lu]   SPI initialized at 40 MHz, Mode 0\n", millis());
+#endif
+  if (Serial) Serial.printf("[%lu]   SPI initialized, Mode 0\n", millis());
 
   // Setup GPIO pins
   pinMode(_cs, OUTPUT);
@@ -160,6 +172,13 @@ void EInkDisplay::begin() {
   digitalWrite(_dc, HIGH);
 
   if (Serial) Serial.printf("[%lu]   GPIO pins configured\n", millis());
+
+#ifdef XTEINK_X4_PRO
+  if (uc8179) {
+    ucInit();
+    return;
+  }
+#endif
 
   // Reset display
   resetDisplay();
@@ -233,6 +252,9 @@ void EInkDisplay::initDisplayController() {
 
   // Soft reset
   sendCommand(CMD_SOFT_RESET);
+  // BUSY may not assert by the first sample after SWRESET (X4 Pro production sequence
+  // needs a fixed 10 ms settle), so waitWhileBusy() alone could return early.
+  delay(10);
   waitWhileBusy(" CMD_SOFT_RESET");
 
   // Temperature sensor control (internal)
@@ -413,6 +435,14 @@ void EInkDisplay::cleanupGrayscaleBuffers(const uint8_t* bwBuffer) {
 #endif
 
 void EInkDisplay::displayBuffer(RefreshMode mode, const bool turnOffScreen) {
+#ifdef XTEINK_X4_PRO
+  if (uc8179) {
+    ucStartRefresh(mode, turnOffScreen);
+    ucWaitIdle(" UC8179 DRF");
+    ucFinishRefresh();
+    return;
+  }
+#endif
   if (!isScreenOn && !turnOffScreen)
   {
     // Force half refresh if screen is off
@@ -600,6 +630,15 @@ void EInkDisplay::refreshDisplay(const RefreshMode mode, const bool turnOffScree
 }
 
 void EInkDisplay::beginRefresh(RefreshMode mode, const bool turnOffScreen) {
+#ifdef XTEINK_X4_PRO
+  if (uc8179) {
+    ucStartRefresh(mode, turnOffScreen);
+    _pendingMode = mode;
+    _refreshStartMs = millis();
+    _refreshState = REFRESHING;
+    return;
+  }
+#endif
   if (!isScreenOn && !turnOffScreen) {
     mode = HALF_REFRESH;
   }
@@ -669,8 +708,20 @@ bool EInkDisplay::pollRefresh() {
   if (millis() - _refreshStartMs > 10000) {
     if (Serial) Serial.printf("[%lu]   pollRefresh: TIMEOUT after %lu ms\n", millis(), millis() - _refreshStartMs);
     _refreshState = IDLE;
+#ifdef XTEINK_X4_PRO
+    ucOldPlaneValid = false;  // unknown panel state: next refresh is a full one
+#endif
     return true;
   }
+
+#ifdef XTEINK_X4_PRO
+  if (uc8179) {
+    if (digitalRead(_busy) == LOW) return false;  // UC8179 BUSY_N: LOW while busy
+    ucFinishRefresh();
+    _refreshState = IDLE;
+    return true;
+  }
+#endif
 
   if (_refreshState == REFRESHING) {
     if (digitalRead(_busy) == HIGH) {
@@ -732,6 +783,19 @@ void EInkDisplay::setCustomLUT(const bool enabled, const unsigned char* lutData)
 
 void EInkDisplay::deepSleep() {
   if (Serial) Serial.printf("[%lu]   Preparing display for deep sleep...\n", millis());
+
+#ifdef XTEINK_X4_PRO
+  if (uc8179) {
+    if (isScreenOn) {
+      sendCommand(0x02);  // POF
+      ucWaitIdle(" UC8179 POF");
+      isScreenOn = false;
+    }
+    sendCommand(0x07);  // DSLP
+    sendData(0xA5);     // check code
+    return;
+  }
+#endif
 
   // First, power down the display properly
   // This shuts down the analog power rails and clock
