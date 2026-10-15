@@ -25,6 +25,8 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install platformio
+      # x4prosim has no BT controller model (esp_bt_controller_init asserts); emulator-only build skips BLE.
+      - run: sed -i 's/^  bleSetup();/  \/\/ emu: no BT model/' src/main.cpp && grep -n 'emu: no BT' src/main.cpp
       - run: pio run -e xteink_x4pro
       - env:
           GH_TOKEN: ${{ github.token }}
