@@ -147,8 +147,13 @@ void EInkDisplay::begin() {
 
   // Initialize SPI with custom pins
   SPI.begin(_sclk, -1, _mosi, _cs);
+#ifdef XTEINK_X4_PRO
+  // X4 Pro wiring is only proven at the 10 MHz freeink-sdk uses for this board.
+  spiSettings = SPISettings(10000000, MSBFIRST, SPI_MODE0);
+#else
   spiSettings = SPISettings(40000000, MSBFIRST, SPI_MODE0);  // MODE0 is standard for SSD1677
-  if (Serial) Serial.printf("[%lu]   SPI initialized at 40 MHz, Mode 0\n", millis());
+#endif
+  if (Serial) Serial.printf("[%lu]   SPI initialized, Mode 0\n", millis());
 
   // Setup GPIO pins
   pinMode(_cs, OUTPUT);
@@ -233,6 +238,9 @@ void EInkDisplay::initDisplayController() {
 
   // Soft reset
   sendCommand(CMD_SOFT_RESET);
+  // BUSY may not assert by the first sample after SWRESET (X4 Pro production sequence
+  // needs a fixed 10 ms settle), so waitWhileBusy() alone could return early.
+  delay(10);
   waitWhileBusy(" CMD_SOFT_RESET");
 
   // Temperature sensor control (internal)

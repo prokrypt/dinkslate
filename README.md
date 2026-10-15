@@ -25,12 +25,13 @@ A dedicated writing firmware for the **Xteink X4** e-paper device. Pairs with an
 - **Power Management** — ESP-IDF light sleep between loop iterations (CPU drops to 10MHz), BLE modem sleep keeps the radio alive, SD card sleeps between accesses, display analog circuits power down after each refresh, and the device enters deep sleep after 5 minutes of inactivity
 - **WiFi Sync** — one-button backup of all notes to your PC over WiFi. Saves network credentials for instant reconnect. Read-only server — nothing on the device can be modified over the network
 - **Standalone Build** — all libraries are bundled in the repo; no sibling projects required
-- **Dual-Boot** — optional combined firmware that includes CrossPoint (an e-reader) in a second OTA slot. A "CrossPoint" entry appears in the main menu; selecting it reboots into the reader. CrossPoint gains a reciprocal "MicroSlate" entry. Both apps work normally when flashed standalone.
+- **Dual-Boot** — optional combined firmware that includes CrossPoint (an e-reader) in a second OTA slot. A "CrossPoint" entry appears in the main menu; selecting it reboots into the reader. CrossPoint gains a reciprocal "MicroSlate" entry. Both apps work normally when flashed standalone. Works with CrossInk/CrossDink in the other slot too: the switch writes otadata directly (as CrossDink does) because their images fail ESP-IDF's runtime image check. Hold **Down** while powering on to boot straight into the other slot, even if MicroSlate can't draw.
 - **Settings Backup** — BLE pairing info, WiFi credentials, and UI preferences are backed up to the SD card as JSON files. They are silently restored after a firmware flash so you don't need to re-pair your keyboard or re-enter WiFi passwords.
 
 ## Hardware Requirements
 
 - Xteink X4 e-paper device (ESP32-C3, 800x480 display, physical buttons, SD slot)
+- or Xteink X4 Pro (ESP32-S3), built with `pio run -e xteink_x4pro`. The two side keys move up/down, the touch panel's Home key is Back, and a tap on the screen is Confirm (except in the editor, where Enter comes from the keyboard). Short-press power returns to the main menu as on the X4.
 - MicroSD card formatted as FAT32
 - A **Bluetooth LE (BLE)** HID keyboard — confirm your keyboard uses BLE before pairing. The ESP32-C3 hardware has no Classic Bluetooth (BR/EDR) radio; Classic BT keyboards cannot connect regardless of firmware settings.
 

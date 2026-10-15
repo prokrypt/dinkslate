@@ -1,5 +1,9 @@
 #include "InputManager.h"
 #include <driver/adc.h>
+#ifdef XTEINK_X4_PRO
+#include <Wire.h>
+#include <driver/gpio.h>
+#endif
 
 // Recorded ADC values from real devices
 // BACK CONF LEFT RGHT   UP DOWN
@@ -29,6 +33,12 @@ InputManager::InputManager()
       buttonPressFinish(0) {}
 
 void InputManager::begin() {
+#ifdef XTEINK_X4_PRO
+  pinMode(BUTTON_UP_PIN, INPUT_PULLUP);
+  pinMode(BUTTON_DOWN_PIN, INPUT_PULLUP);
+  pinMode(POWER_BUTTON_PIN, INPUT_PULLUP);
+  beginTouch();
+#else
   // Configure ADC using ESP-IDF API directly to avoid GPIO reconfiguration
   // that Arduino's analogRead() triggers on every call in the dual framework
   adc1_config_width(ADC_WIDTH_BIT_12);
@@ -38,6 +48,7 @@ void InputManager::begin() {
 
   // Power button is digital, keep using Arduino API
   pinMode(POWER_BUTTON_PIN, INPUT_PULLUP);
+#endif
 }
 
 int InputManager::getButtonFromADC(const int adcValue, const int ranges[], const int numButtons) {
@@ -52,6 +63,13 @@ int InputManager::getButtonFromADC(const int adcValue, const int ranges[], const
 
 uint8_t InputManager::getState() {
   uint8_t state = 0;
+
+#ifdef XTEINK_X4_PRO
+  if (digitalRead(BUTTON_UP_PIN) == LOW) state |= (1 << BTN_UP);
+  if (digitalRead(BUTTON_DOWN_PIN) == LOW) state |= (1 << BTN_DOWN);
+  if (digitalRead(POWER_BUTTON_PIN) == LOW) state |= (1 << BTN_POWER);
+  return state | pollTouch();
+#else
 
   // Read GPIO1 buttons using ESP-IDF API (no GPIO reconfiguration overhead)
   const int adcValue1 = adc1_get_raw(ADC1_CHANNEL_1);
@@ -73,15 +91,12 @@ uint8_t InputManager::getState() {
   }
 
   return state;
+#endif
 }
 
 void InputManager::update() {
   const unsigned long currentTime = millis();
   const uint8_t state = getState();
-
-  // Always clear events first
-  pressedEvents = 0;
-  releasedEvents = 0;
 
   // Debounce
   if (state != lastState) {
@@ -89,24 +104,32 @@ void InputManager::update() {
     lastState = state;
   }
 
-  if ((currentTime - lastDebounceTime) > DEBOUNCE_DELAY) {
-    if (state != currentState) {
-      // Calculate pressed and released events
-      pressedEvents = state & ~currentState;
-      releasedEvents = currentState & ~state;
+  applyState((currentTime - lastDebounceTime) > DEBOUNCE_DELAY ? state : currentState);
+}
 
-      // If pressing buttons and wasn't before, start recording time
-      if (pressedEvents > 0 && currentState == 0) {
-        buttonPressStart = currentTime;
-      }
+void InputManager::applyState(const uint8_t state) {
+  const unsigned long currentTime = millis();
 
-      // If releasing a button and no other buttons being pressed, record finish time
-      if (releasedEvents > 0 && state == 0) {
-        buttonPressFinish = currentTime;
-      }
+  // Always clear events first
+  pressedEvents = 0;
+  releasedEvents = 0;
 
-      currentState = state;
+  if (state != currentState) {
+    // Calculate pressed and released events
+    pressedEvents = state & ~currentState;
+    releasedEvents = currentState & ~state;
+
+    // If pressing buttons and wasn't before, start recording time
+    if (pressedEvents > 0 && currentState == 0) {
+      buttonPressStart = currentTime;
     }
+
+    // If releasing a button and no other buttons being pressed, record finish time
+    if (releasedEvents > 0 && state == 0) {
+      buttonPressFinish = currentTime;
+    }
+
+    currentState = state;
   }
 }
 
@@ -149,3 +172,73 @@ const char* InputManager::getButtonName(const uint8_t buttonIndex) {
 bool InputManager::isPowerButtonPressed() const {
   return isPressed(BTN_POWER);
 }
+
+#ifdef XTEINK_X4_PRO
+// --- GT911 touch (X4 Pro) ----------------------------------------------------
+// Minimal port of freeink-sdk's GT911 path: the capacitive Home key is BACK and a
+// tap anywhere on the panel is CONFIRM. Pins: SDA39/SCL38, INT10, RST4, rail GPIO2
+// (active LOW). The controller self-loads its config on reset.
+namespace {
+constexpr int TOUCH_SDA = 39;
+constexpr int TOUCH_SCL = 38;
+constexpr int TOUCH_INT = 10;
+constexpr int TOUCH_RST = 4;
+constexpr int TOUCH_RAIL = 2;
+constexpr unsigned long TOUCH_POLL_MS = 15;
+}  // namespace
+
+void InputManager::beginTouch() {
+  gpio_hold_dis(static_cast<gpio_num_t>(TOUCH_RAIL));  // sleep path holds it off
+  pinMode(TOUCH_RAIL, OUTPUT);
+  digitalWrite(TOUCH_RAIL, LOW);
+  delay(50);
+
+  Wire.begin(TOUCH_SDA, TOUCH_SCL, 400000);
+  Wire.setTimeOut(10);
+
+  // Reset dance: INT level while RST rises selects the I2C address (LOW = 0x5D).
+  for (const uint8_t intLevel : {LOW, HIGH}) {
+    pinMode(TOUCH_INT, OUTPUT);
+    pinMode(TOUCH_RST, OUTPUT);
+    digitalWrite(TOUCH_RST, LOW);
+    digitalWrite(TOUCH_INT, intLevel);
+    delay(10);
+    digitalWrite(TOUCH_RST, HIGH);
+    delay(60);
+    pinMode(TOUCH_INT, INPUT);
+    delay(50);
+    for (const uint8_t addr : {0x5D, 0x14}) {
+      Wire.beginTransmission(addr);
+      if (Wire.endTransmission() == 0) {
+        touchAddr = addr;
+        return;
+      }
+    }
+  }
+}
+
+uint8_t InputManager::pollTouch() {
+  if (!touchAddr || millis() - lastTouchPoll < TOUCH_POLL_MS) return touchState;
+  lastTouchPoll = millis();
+
+  Wire.beginTransmission(touchAddr);
+  Wire.write(0x81);
+  Wire.write(0x4E);
+  if (Wire.endTransmission(false) != 0 || Wire.requestFrom(touchAddr, static_cast<uint8_t>(1)) != 1) {
+    return touchState;  // transient bus error: keep the last state
+  }
+  const uint8_t status = Wire.read();
+  if (!(status & 0x80)) return touchState;  // no fresh frame; a motionless hold keeps its state
+
+  touchState = 0;
+  if (status & 0x10) touchState |= (1 << BTN_BACK);     // capacitive Home key
+  if (status & 0x0F) touchState |= (1 << BTN_CONFIRM);  // any contact on the panel
+
+  Wire.beginTransmission(touchAddr);  // ack the frame
+  Wire.write(0x81);
+  Wire.write(0x4E);
+  Wire.write(0x00);
+  Wire.endTransmission();
+  return touchState;
+}
+#endif

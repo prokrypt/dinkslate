@@ -15,12 +15,21 @@ class InputManager {
   void update();
 
   /**
+   * Like #update(), but takes an already-debounced state (e.g. one queued by an input
+   * task) instead of sampling the hardware.
+   */
+  void applyState(uint8_t state);
+
+  /**
    * Returns true if the button was being held at the time of the last #update() call.
    *
    * @param buttonIndex the button indexes
    * @return the button current press state
    */
   bool isPressed(uint8_t buttonIndex) const;
+
+  // Debounced state as of the last #update() / #applyState() call (bit per button).
+  uint8_t getCurrentState() const { return currentState; }
 
  /**
    * Returns true if the button went from unpressed to pressed between the last two #update() calls.
@@ -73,8 +82,15 @@ class InputManager {
   static constexpr uint8_t BTN_POWER = 6;
 
   // Pins
+#ifdef XTEINK_X4_PRO
+  // X4 Pro: two active-low side keys + power. GPIO0 is a boot strap: fine as a key
+  // unless held during reset. Back/Confirm come from the GT911 (home key / screen tap).
+  static constexpr int BUTTON_UP_PIN = 0;
+  static constexpr int BUTTON_DOWN_PIN = 7;
+#else
   static constexpr int BUTTON_ADC_PIN_1 = 1;
   static constexpr int BUTTON_ADC_PIN_2 = 2;
+#endif
   static constexpr int POWER_BUTTON_PIN = 3;
 
   // Power button methods
@@ -85,6 +101,13 @@ class InputManager {
 
  private:
   int getButtonFromADC(int adcValue, const int ranges[], int numButtons);
+#ifdef XTEINK_X4_PRO
+  void beginTouch();
+  uint8_t pollTouch();
+  uint8_t touchAddr = 0;
+  uint8_t touchState = 0;
+  unsigned long lastTouchPoll = 0;
+#endif
 
   uint8_t currentState;
   uint8_t lastState;
