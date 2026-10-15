@@ -1,0 +1,44 @@
+name: emu bins (scratch)
+# Scratch: builds feat/x4pro and fetches CrossDink's X4 Pro builds, then commits the
+# binaries to the emu-out branch so a sandbox without artifact-storage access can git-fetch them.
+on:
+  push:
+    branches: [emu-bins]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  bins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/x4pro
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            .pio/build
+          key: emu-pio-${{ hashFiles('platformio.ini', 'sdkconfig.defaults') }}
+          restore-keys: emu-pio-
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install platformio
+      - run: pio run -e xteink_x4pro
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p out/crossdink
+          git rev-parse HEAD > out/source-sha.txt
+          cp .pio/build/xteink_x4pro/bootloader.bin .pio/build/xteink_x4pro/partitions.bin .pio/build/xteink_x4pro/firmware.bin out/
+          cp "$(find ~/.platformio -name boot_app0.bin | head -1)" out/
+          for n in firmware-x4-pro-debug firmware-x4-pro; do
+            id=$(gh api "repos/prokrypt/CrossDink/actions/artifacts?name=$n&per_page=1" --jq '.artifacts[0].id')
+            gh api "repos/prokrypt/CrossDink/actions/artifacts/$id/zip" > cd.zip && unzip -o cd.zip -d out/crossdink/$n || echo "crossdink $n fetch failed" >> out/errors.txt
+          done
+          cd out
+          git init -q -b emu-out
+          git add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -qm "bins $(cat source-sha.txt)"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" emu-out
