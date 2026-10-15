@@ -15,21 +15,12 @@ class InputManager {
   void update();
 
   /**
-   * Like #update(), but takes an already-debounced state (e.g. one queued by an input
-   * task) instead of sampling the hardware.
-   */
-  void applyState(uint8_t state);
-
-  /**
    * Returns true if the button was being held at the time of the last #update() call.
    *
    * @param buttonIndex the button indexes
    * @return the button current press state
    */
   bool isPressed(uint8_t buttonIndex) const;
-
-  // Debounced state as of the last #update() / #applyState() call (bit per button).
-  uint8_t getCurrentState() const { return currentState; }
 
  /**
    * Returns true if the button went from unpressed to pressed between the last two #update() calls.

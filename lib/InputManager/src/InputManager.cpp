@@ -98,38 +98,34 @@ void InputManager::update() {
   const unsigned long currentTime = millis();
   const uint8_t state = getState();
 
+  // Always clear events first
+  pressedEvents = 0;
+  releasedEvents = 0;
+
   // Debounce
   if (state != lastState) {
     lastDebounceTime = currentTime;
     lastState = state;
   }
 
-  applyState((currentTime - lastDebounceTime) > DEBOUNCE_DELAY ? state : currentState);
-}
+  if ((currentTime - lastDebounceTime) > DEBOUNCE_DELAY) {
+    if (state != currentState) {
+      // Calculate pressed and released events
+      pressedEvents = state & ~currentState;
+      releasedEvents = currentState & ~state;
 
-void InputManager::applyState(const uint8_t state) {
-  const unsigned long currentTime = millis();
+      // If pressing buttons and wasn't before, start recording time
+      if (pressedEvents > 0 && currentState == 0) {
+        buttonPressStart = currentTime;
+      }
 
-  // Always clear events first
-  pressedEvents = 0;
-  releasedEvents = 0;
+      // If releasing a button and no other buttons being pressed, record finish time
+      if (releasedEvents > 0 && state == 0) {
+        buttonPressFinish = currentTime;
+      }
 
-  if (state != currentState) {
-    // Calculate pressed and released events
-    pressedEvents = state & ~currentState;
-    releasedEvents = currentState & ~state;
-
-    // If pressing buttons and wasn't before, start recording time
-    if (pressedEvents > 0 && currentState == 0) {
-      buttonPressStart = currentTime;
+      currentState = state;
     }
-
-    // If releasing a button and no other buttons being pressed, record finish time
-    if (releasedEvents > 0 && state == 0) {
-      buttonPressFinish = currentTime;
-    }
-
-    currentState = state;
   }
 }
 

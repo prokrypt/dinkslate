@@ -71,12 +71,6 @@ class HalGPIO {
 
   WakeupReason getWakeupReason() const;
 
-  // Sample input on its own task and queue every change, so presses made while the
-  // loop is busy (render, SD save) are delivered in order instead of lost.
-  void startInputTask();
-  // Idle wait for the loop: returns early as soon as an input change is queued.
-  void waitForInput(uint32_t timeoutMs);
-
   // Button indices
   static constexpr uint8_t BTN_BACK = 0;
   static constexpr uint8_t BTN_CONFIRM = 1;

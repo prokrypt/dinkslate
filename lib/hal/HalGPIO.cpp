@@ -3,19 +3,10 @@
 #include <SPI.h>
 #include <esp_sleep.h>
 #include <driver/gpio.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/queue.h>
-#include <freertos/task.h>
 #ifdef XTEINK_X4_PRO
 #include <Wire.h>
 #include <driver/rtc_io.h>
 #endif
-
-namespace {
-// Debounced input states sampled by the input task, oldest first.
-QueueHandle_t inputQueue = nullptr;
-constexpr int INPUT_QUEUE_LEN = 32;
-}  // namespace
 
 void HalGPIO::begin() {
 #ifdef XTEINK_X4_PRO
@@ -39,58 +30,7 @@ void HalGPIO::begin() {
 #endif
 }
 
-void HalGPIO::update() {
-  if (!inputQueue) {
-    inputMgr.update();
-    return;
-  }
-  // One queued state per loop pass, so a press and release made while the loop was
-  // busy still show up as two separate edges.
-  uint8_t state;
-  if (xQueueReceive(inputQueue, &state, 0) == pdTRUE) {
-    inputMgr.applyState(state);
-  } else {
-    inputMgr.applyState(inputMgr.getCurrentState());
-  }
-}
-
-static void inputTaskMain(void* arg) {
-  auto* mgr = static_cast<InputManager*>(arg);
-  uint8_t sent = mgr->getCurrentState();
-  uint8_t last = sent;
-  unsigned long changedAt = millis();
-  for (;;) {
-    const uint8_t state = mgr->getState();
-    if (state != last) {
-      last = state;
-      changedAt = millis();
-    }
-    if (state != sent && millis() - changedAt >= 5) {  // same debounce as InputManager
-      if (xQueueSend(inputQueue, &state, 0) == pdTRUE) sent = state;
-    }
-    vTaskDelay(pdMS_TO_TICKS(state || state != sent ? 5 : 15));
-  }
-}
-
-void HalGPIO::startInputTask() {
-  if (inputQueue) return;
-  inputQueue = xQueueCreate(INPUT_QUEUE_LEN, sizeof(uint8_t));
-  if (!inputQueue) return;
-  // Above the Arduino loop task (1), so sampling is never starved by loop work.
-  if (xTaskCreate(inputTaskMain, "input", 3072, &inputMgr, 2, nullptr) != pdPASS) {
-    vQueueDelete(inputQueue);
-    inputQueue = nullptr;  // fall back to sampling on the loop
-  }
-}
-
-void HalGPIO::waitForInput(const uint32_t timeoutMs) {
-  uint8_t state;
-  if (!inputQueue) {
-    delay(timeoutMs);
-    return;
-  }
-  xQueuePeek(inputQueue, &state, pdMS_TO_TICKS(timeoutMs));
-}
+void HalGPIO::update() { inputMgr.update(); }
 
 bool HalGPIO::isPressed(uint8_t buttonIndex) const { return inputMgr.isPressed(buttonIndex); }
 
@@ -105,10 +45,10 @@ bool HalGPIO::wasAnyReleased() const { return inputMgr.wasAnyReleased(); }
 unsigned long HalGPIO::getHeldTime() const { return inputMgr.getHeldTime(); }
 
 void HalGPIO::startDeepSleep() {
-  // Ensure that the power button has been released to avoid immediately turning back on if you're holding it.
-  // Read the pin directly: the input task may own InputManager's sampling.
-  while (digitalRead(InputManager::POWER_BUTTON_PIN) == LOW) {
+  // Ensure that the power button has been released to avoid immediately turning back on if you're holding it
+  while (inputMgr.isPressed(BTN_POWER)) {
     delay(50);
+    inputMgr.update();
   }
 #ifdef XTEINK_X4_PRO
   // Keep the master rail HIGH (else the next press cold-boots), cut touch and SD.

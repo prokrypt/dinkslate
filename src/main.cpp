@@ -366,8 +366,6 @@ void setup() {
   registerOtaAppName("MicroSlate");
   detectOtaApps();
 
-  gpio.startInputTask();
-
   DBG_PRINTLN("MicroSlate ready.");
 
   // The display needs one FULL_REFRESH after power-on to initialize its analog
@@ -853,10 +851,10 @@ void loop() {
 
   // Adaptive delay with recently-active window for button responsiveness.
   // BLE keystrokes wake from light sleep via modem interrupt (delay value irrelevant).
-  // Physical buttons are sampled on the input task and queued, so a tap is never missed;
-  // the wait just ends early when one arrives. Stay at a fast tick for 2s after any
-  // activity for snappy consecutive presses.
+  // Physical buttons are polled, so the idle delay must be short enough to catch a
+  // quick tap (~80-150ms). 50ms idle guarantees 1-2 samples per press.
+  // Stay at fast polling for 2s after any activity for snappy consecutive presses.
   static constexpr unsigned long ACTIVE_WINDOW_MS = 2000;
   bool recentlyActive = (millis() - lastInputTime) < ACTIVE_WINDOW_MS;
-  gpio.waitForInput((hadActivity || screenDirty || recentlyActive) ? 10 : 50);
+  delay((hadActivity || screenDirty || recentlyActive) ? 10 : 50);
 }
