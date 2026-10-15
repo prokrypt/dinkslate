@@ -109,4 +109,19 @@ class EInkDisplay {
   // Low-level display operations
   void setRamArea(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
   void writeRamBuffer(uint8_t ramBuffer, const uint8_t* data, uint32_t size);
+
+#ifdef XTEINK_X4_PRO
+  // UltraChip UC8179 path (EInkDisplayUc8179.cpp). Most X4 Pro batches carry a
+  // UC8179 instead of the SSD1677; begin() probes and picks the controller.
+  bool uc8179 = false;
+  bool ucOldPlaneValid = false;  // DTM1 holds the displayed frame (fast refresh baseline)
+  bool ucPartial = false;        // the pending refresh used PTIN
+  bool ucTurnOff = false;        // POF after the pending refresh
+  bool ucProbe();
+  void ucInit();
+  void ucWaitIdle(const char* comment);
+  void ucStreamPlane(uint8_t cmd, const uint8_t* fb);  // nullptr = white
+  void ucStartRefresh(RefreshMode mode, bool turnOffScreen);
+  void ucFinishRefresh();
+#endif
 };
