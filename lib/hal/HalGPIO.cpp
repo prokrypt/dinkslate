@@ -8,6 +8,92 @@
 #include <driver/rtc_io.h>
 #endif
 
+#ifdef XTEINK_X4_PRO
+// CW2017 fuel gauge, ported from freeink-sdk (register map + OEM init recovered from the
+// X4 Pro stock firmware). The gauge reports 0% until a matching battery profile is resident.
+namespace {
+constexpr uint8_t CW2017_REG_VERSION = 0x00;    // 0xA0 while starting; running = 0x0D/0x0F
+constexpr uint8_t CW2017_REG_SOC = 0x04;        // integer percent
+constexpr uint8_t CW2017_REG_MODE = 0x08;       // soft-reset / sleep control
+constexpr uint8_t CW2017_REG_SOC_ALERT = 0x0B;  // bit7 = profile loaded
+constexpr uint8_t CW2017_REG_BATINFO = 0x10;    // 80-byte profile, 0x10..0x5F
+constexpr uint8_t CW2017_MODE_NORMAL = 0x00;
+constexpr uint8_t CW2017_UPDATE_FLAG = 0x80;
+
+// OEM profile for the X4 Pro cell (stock app1 table).
+constexpr uint8_t CW2017_BATINFO[80] = {
+    0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xaa, 0xbf, 0xb5, 0xb4, 0xa4, 0x9c, 0xeb, 0xe2,
+    0xdf, 0xe5, 0xca, 0xa0, 0x8a, 0x62, 0x53, 0x48, 0x40, 0x3a, 0x32, 0xb1, 0xae, 0xda, 0xb5, 0xff,
+    0xff, 0xff, 0xe8, 0xdb, 0xd9, 0xd6, 0xd4, 0xd2, 0xd0, 0xcb, 0xc3, 0xbc, 0x9e, 0x87, 0x7b, 0x71,
+    0x72, 0x7c, 0x8c, 0xa3, 0xb7, 0xc8, 0xa5, 0x4f, 0x00, 0x00, 0xab, 0x02, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x23};
+
+bool cw2017Read(uint8_t reg, uint8_t& out) {
+  Wire.beginTransmission(CW2017_ADDR);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0 ||
+      Wire.requestFrom(static_cast<uint8_t>(CW2017_ADDR), static_cast<uint8_t>(1)) != 1) {
+    return false;
+  }
+  out = Wire.read();
+  return true;
+}
+
+bool cw2017Write(uint8_t reg, uint8_t val) {
+  Wire.beginTransmission(CW2017_ADDR);
+  Wire.write(reg);
+  Wire.write(val);
+  return Wire.endTransmission() == 0;
+}
+
+bool cw2017Running(uint8_t version) { return (version & 0xFD) == 0x0D; }
+
+// Soft reset (MODE 0xF0 -> 0x30 -> 0x00), then wait for the engine and a valid SoC (~1 s + ~3 s max).
+bool cw2017Restart() {
+  for (const uint8_t m : {0xF0, 0x30, 0x00}) {
+    if (!cw2017Write(CW2017_REG_MODE, m)) return false;
+    delay(20);
+  }
+  uint8_t v = 0;
+  int i = 0;
+  while (!(cw2017Read(CW2017_REG_VERSION, v) && cw2017Running(v))) {
+    if (++i >= 50) return false;
+    delay(20);
+  }
+  for (i = 0; i < 30; ++i) {
+    if (cw2017Read(CW2017_REG_SOC, v) && v <= 100) return true;
+    delay(100);
+  }
+  return false;
+}
+
+// Upload the profile if missing/different and restart the gauge if it isn't running.
+// Any I2C error returns false (caller retries) so a glitch never causes a partial rewrite.
+bool cw2017EnsureProfile() {
+  uint8_t mode = 0, version = 0, cfg = 0, b = 0;
+  if (!cw2017Read(CW2017_REG_MODE, mode) || !cw2017Read(CW2017_REG_VERSION, version) ||
+      !cw2017Read(CW2017_REG_SOC_ALERT, cfg)) {
+    return false;
+  }
+  bool matches = (cfg & CW2017_UPDATE_FLAG) != 0;
+  for (uint8_t i = 0; matches && i < sizeof(CW2017_BATINFO); ++i) {
+    if (!cw2017Read(CW2017_REG_BATINFO + i, b)) return false;
+    matches = b == CW2017_BATINFO[i];
+  }
+  if (!matches) {
+    for (uint8_t i = 0; i < sizeof(CW2017_BATINFO); ++i) {
+      if (!cw2017Write(CW2017_REG_BATINFO + i, CW2017_BATINFO[i])) return false;
+    }
+    if (!cw2017Write(CW2017_REG_SOC_ALERT, CW2017_UPDATE_FLAG)) return false;
+    delay(20);
+    return cw2017Restart();
+  }
+  if (mode != CW2017_MODE_NORMAL || !cw2017Running(version)) return cw2017Restart();
+  return cw2017Read(CW2017_REG_SOC, b) && (b <= 100 || cw2017Restart());
+}
+}  // namespace
+#endif
+
 void HalGPIO::begin() {
 #ifdef XTEINK_X4_PRO
   // Release pad holds a previous deep sleep (ours or the other OTA app's) left armed,
@@ -77,18 +163,21 @@ void HalGPIO::startDeepSleep() {
 
 int HalGPIO::getBatteryPercentage() const {
 #ifdef XTEINK_X4_PRO
-  // shortcut: reads the CW2017 SoC register only and relies on the battery profile the
-  // stock/CrossPoint firmware already loaded into the gauge; port freeink-sdk's BATINFO
-  // upload if readings are wrong after the battery was fully disconnected.
+  static bool profileReady = false;
   static int cachedPct = -1;
-  static unsigned long lastReadMs = 0;
-  if (cachedPct < 0 || millis() - lastReadMs >= 30000) {
-    lastReadMs = millis();
-    Wire.beginTransmission(CW2017_ADDR);
-    Wire.write(0x04);
-    if (Wire.endTransmission(false) == 0 && Wire.requestFrom(static_cast<uint8_t>(CW2017_ADDR), static_cast<uint8_t>(1)) == 1) {
-      const int soc = Wire.read();
-      if (soc <= 100) cachedPct = soc;
+  static unsigned long nextReadMs = 0;
+  if (static_cast<long>(millis() - nextReadMs) >= 0) {
+    nextReadMs = millis() + 30000;
+    // A gauge that lost power reads 0% until its profile is reloaded; re-check on any bad read.
+    if (!profileReady) profileReady = cw2017EnsureProfile();
+    uint8_t mode = 0, version = 0, soc = 0;
+    if (profileReady && cw2017Read(CW2017_REG_MODE, mode) && mode == CW2017_MODE_NORMAL &&
+        cw2017Read(CW2017_REG_VERSION, version) && cw2017Running(version) && cw2017Read(CW2017_REG_SOC, soc) &&
+        soc <= 100) {
+      cachedPct = soc;
+    } else {
+      profileReady = false;
+      nextReadMs = millis() + 1000;  // retry sooner, but never every frame
     }
   }
   return cachedPct < 0 ? 0 : cachedPct;
