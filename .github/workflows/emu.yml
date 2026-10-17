@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: feat/x4pro
+          ref: claude/touch-input-wrkw41
       - uses: actions/cache@v4
         with:
           path: |
@@ -42,7 +42,7 @@ jobs:
             gh api "repos/prokrypt/CrossDink/actions/artifacts/$id/zip" > cd.zip && unzip -o cd.zip -d out/crossdink/$n || echo "crossdink $n fetch failed" >> out/errors.txt
           done
           cd out
-          git init -q -b emu-out
+          git init -q -b emu-out-touch
           git add -A
           git -c user.name=ci -c user.email=ci@localhost commit -qm "bins $(cat source-sha.txt)"
-          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" emu-out
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" emu-out-touch
