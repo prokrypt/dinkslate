@@ -15,6 +15,15 @@ class InputManager {
   void update();
 
   /**
+   * Like #update(), but takes an already-debounced state (e.g. one queued by an input
+   * task) instead of sampling the hardware.
+   */
+  void applyState(uint8_t state);
+
+  // Debounced state as of the last #update() / #applyState() call (bit per button).
+  uint8_t getCurrentState() const { return currentState; }
+
+  /**
    * Returns true if the button was being held at the time of the last #update() call.
    *
    * @param buttonIndex the button indexes
@@ -78,6 +87,13 @@ class InputManager {
   // unless held during reset. Back/Confirm come from the GT911 (home key / screen tap).
   static constexpr int BUTTON_UP_PIN = 0;
   static constexpr int BUTTON_DOWN_PIN = 7;
+  static constexpr int TOUCH_INT_PIN = 10;
+
+  // GT911 found at boot, a contact or the Home key down as of the last getState(),
+  // and the INT level that signals a new frame (from the controller's config).
+  bool hasTouch() const { return touchAddr != 0; }
+  bool isTouchHeld() const { return touchState != 0; }
+  int touchIntActiveLevel() const { return touchIntLevel; }
 #else
   static constexpr int BUTTON_ADC_PIN_1 = 1;
   static constexpr int BUTTON_ADC_PIN_2 = 2;
@@ -97,7 +113,7 @@ class InputManager {
   uint8_t pollTouch();
   uint8_t touchAddr = 0;
   uint8_t touchState = 0;
-  unsigned long lastTouchPoll = 0;
+  int touchIntLevel = HIGH;
 #endif
 
   uint8_t currentState;

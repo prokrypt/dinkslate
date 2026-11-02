@@ -362,6 +362,8 @@ void setup() {
   registerOtaAppName("MicroSlate");
   detectOtaApps();
 
+  gpio.startInputTask();
+
   DBG_PRINTLN("MicroSlate ready.");
 
   // The display needs one FULL_REFRESH after power-on to initialize its analog
@@ -845,12 +847,12 @@ void loop() {
     enterDeepSleep(SleepReason::IDLE_TIMEOUT);
   }
 
-  // Adaptive delay with recently-active window for button responsiveness.
-  // BLE keystrokes wake from light sleep via modem interrupt (delay value irrelevant).
-  // Physical buttons are polled, so the idle delay must be short enough to catch a
-  // quick tap (~80-150ms). 50ms idle guarantees 1-2 samples per press.
-  // Stay at fast polling for 2s after any activity for snappy consecutive presses.
-  static constexpr unsigned long ACTIVE_WINDOW_MS = 2000;
-  bool recentlyActive = (millis() - lastInputTime) < ACTIVE_WINDOW_MS;
-  delay((hadActivity || screenDirty || recentlyActive) ? 10 : 50);
+  // Keys, touch, BLE keystrokes and BLE screen updates all end this wait early, so the
+  // idle timeout only bounds the loop's own timers (autosave, reconnect, idle sleep),
+  // none finer than 1s. Tick fast while something here is timed: a held key (repeat,
+  // long press), a refresh in flight, or the BT / WiFi screens (scan end, sync status).
+  bool busy = hadActivity || screenDirty || renderer.isRefreshing() || gpio.isAnyPressed()
+              || currentState == UIState::BLUETOOTH_SETTINGS || currentState == UIState::WIFI_SYNC
+              || isWifiSyncActive();
+  gpio.waitForInput(busy ? 10 : 1000);
 }
