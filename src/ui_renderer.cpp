@@ -385,7 +385,7 @@ static int drawEditorHeader(GfxRenderer& renderer, HalGPIO& gpio, int sw, bool t
   }
 
   // Word count — drawn to the left of the layout indicator (or mode indicator)
-  int titleMaxW = layoutIndX - 10;
+  int titleMaxW = layoutIndX - 20;  // title starts at x=10; keep a 10px gap
   if (showWordCount) {
     int wc = editorGetWordCount();
     char wcBuf[24];
@@ -395,7 +395,7 @@ static int drawEditorHeader(GfxRenderer& renderer, HalGPIO& gpio, int sw, bool t
     int wcX = layoutIndX - 8 - wcW;
     if (wcX > 10) {
       drawClippedText(renderer, FONT_SMALL, wcX, 5, wcBuf, wcW + 5, tc);
-      titleMaxW = wcX - 10;
+      titleMaxW = wcX - 20;
     }
   }
 
@@ -422,8 +422,10 @@ static void drawFindBar(GfxRenderer& renderer, int sw, int sh, bool tc) {
   clippedLine(renderer, 0, barY, sw, barY, tc);        // top divider
   char line[72];
   snprintf(line, sizeof(line), "Find: %s", findBuffer);
-  drawClippedText(renderer, FONT_UI, 8, barY + 5, line, sw - 100, tc);
-  drawRightText(renderer, FONT_SMALL, sw - 8, barY + 7, "Enter:Next Esc:Close", tc);
+  const char* hint = "Enter:Next Esc:Close";
+  int hintW = renderer.getTextWidth(FONT_SMALL, hint);
+  drawClippedText(renderer, FONT_UI, 8, barY + 5, line, sw - 8 - hintW - 18, tc);  // 10px gap before hint
+  drawRightText(renderer, FONT_SMALL, sw - 8, barY + 7, hint, tc);
 }
 
 void drawTextEditor(GfxRenderer& renderer, HalGPIO& gpio) {
@@ -682,7 +684,7 @@ void drawBluetoothSettings(GfxRenderer& renderer, HalGPIO& gpio) {
     case BLEState::CONNECTING:   status = "Connecting..."; break;
     case BLEState::DISCONNECTED: status = "Not connected"; break;
   }
-  drawClippedText(renderer, FONT_SMALL, 10, 45, status, sw / 2 - 10, tc);
+  drawClippedText(renderer, FONT_SMALL, 10, 45, status, sw / 2 - 20, tc);
 
   // Paired device info
   std::string storedAddr, storedName;
@@ -712,7 +714,7 @@ void drawBluetoothSettings(GfxRenderer& renderer, HalGPIO& gpio) {
     char scanningStr[64];
     int deviceCount = getDiscoveredDeviceCount();
     snprintf(scanningStr, sizeof(scanningStr), "Searching for devices%s", dots.c_str());
-    drawClippedText(renderer, FONT_SMALL, 10, 68, scanningStr, sw / 2 - 10, tc);
+    drawClippedText(renderer, FONT_SMALL, 10, 68, scanningStr, sw / 2 - 20, tc);
 
     char foundStr[32];
     snprintf(foundStr, sizeof(foundStr), "Found: %d", deviceCount);
