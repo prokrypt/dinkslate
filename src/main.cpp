@@ -69,6 +69,7 @@ int findBufferLen = 0;
 bool darkMode = false;
 bool cleanMode = false;
 bool deleteConfirmPending = false;
+bool loadFailedNotice = false;  // browser footer: last open was refused
 WritingMode writingMode = WritingMode::NORMAL;
 FontSize fontSize = FontSize::LARGE;
 bool showWordCount = true;

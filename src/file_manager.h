@@ -11,7 +11,7 @@ void recoverTempFiles();
 int getFileCount();
 FileInfo* getFileList();
 
-void loadFile(const char* filename);
+bool loadFile(const char* filename);  // false if unreadable or over TEXT_BUFFER_SIZE - 1 bytes
 void saveCurrentFile(bool refreshList = true);
 void createNewFile();
 void deriveUniqueFilename(const char* title, char* out, int maxLen);
