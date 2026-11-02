@@ -101,9 +101,15 @@ static void drawClippedText(GfxRenderer& r, int font, int x, int y,
   if (maxW <= 0) return;
 
   auto clipped = r.truncatedText(font, text, maxW, style);
-  if (!clipped.empty()) {
+  if (clipped.empty()) return;
+  if (clipped == text) {
     r.drawText(font, x, y, clipped.c_str(), black, style);
+    return;
   }
+  // Truncated: text from the left, "..." pinned to the right edge of the area.
+  clipped.resize(clipped.size() - 3);
+  if (!clipped.empty()) r.drawText(font, x, y, clipped.c_str(), black, style);
+  r.drawText(font, x + maxW - r.getTextWidth(font, "...", style), y, "...", black, style);
 }
 
 // Draw right-aligned text (e.g. battery %, RSSI, settings values).
