@@ -52,7 +52,6 @@ int bluetoothDeviceSelection = 0;
 int pairedKeyboardSelection = 0;
 bool pairedForgetPending = false;   // true while a "Forget keyboard?" confirmation is armed
 Orientation currentOrientation = Orientation::PORTRAIT;
-int charsPerLine = 40;
 bool screenDirty = true;
 bool btShowAllDevices = true;    // Bluetooth scan: show ALL devices by default (HID classification
                                  // is unreliable — many keyboards don't advertise HID pre-connect,
@@ -242,14 +241,10 @@ static void updateScreen() {
     lastOrientation = currentOrientation;
   }
 
-  // Auto-compute chars per line from font metrics so text always fills the screen
-  {
-    int sw = renderer.getScreenWidth();
-    int textAreaWidth = sw - 20;  // 10px margins each side
-    int avgCharW = renderer.getTextAdvanceX(editorFontId(fontSize), "abcdefghijklmnopqrstuvwxyz") / 26;
-    if (avgCharW > 0) charsPerLine = textAreaWidth / avgCharW;
-  }
-  editorSetCharsPerLine(charsPerLine);
+  // Wrap by real glyph widths so every line fits the 10px-margin text area. 2px slack:
+  // the line draw truncates on ink bounds, which can overhang the advance sum.
+  editorSetWrap(renderer.getScreenWidth() - 22, editorFontId(fontSize),
+                [](uint32_t cp) { return renderer.getCodepointAdvanceX(editorFontId(fontSize), cp); });
 
   switch (currentState) {
     case UIState::MAIN_MENU:         drawMainMenu(renderer, gpio); break;

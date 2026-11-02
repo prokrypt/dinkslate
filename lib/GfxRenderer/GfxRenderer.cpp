@@ -690,7 +690,17 @@ int GfxRenderer::getSpaceWidth(const int fontId) const {
     return 0;
   }
 
-  return fontMap.at(fontId).getGlyph(' ', EpdFontFamily::REGULAR)->advanceX;
+  return getCodepointAdvanceX(fontId, ' ');
+}
+
+// Glyphs missing from the font (emoji, CJK, stray bytes from a PC-edited note) fall back to
+// the replacement glyph like renderChar does, else 0 — never a null deref.
+int GfxRenderer::getCodepointAdvanceX(const int fontId, const uint32_t cp) const {
+  const auto it = fontMap.find(fontId);
+  if (it == fontMap.end()) return 0;
+  const EpdGlyph* glyph = it->second.getGlyph(cp, EpdFontFamily::REGULAR);
+  if (!glyph) glyph = it->second.getGlyph(REPLACEMENT_GLYPH, EpdFontFamily::REGULAR);
+  return glyph ? glyph->advanceX : 0;
 }
 
 int GfxRenderer::getTextAdvanceX(const int fontId, const char* text) const {
@@ -702,7 +712,7 @@ int GfxRenderer::getTextAdvanceX(const int fontId, const char* text) const {
   uint32_t cp;
   int width = 0;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text)))) {
-    width += fontMap.at(fontId).getGlyph(cp, EpdFontFamily::REGULAR)->advanceX;
+    width += getCodepointAdvanceX(fontId, cp);
   }
   return width;
 }

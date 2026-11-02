@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "config.h"
 
 void editorInit();
@@ -49,7 +51,9 @@ bool editorHasParagraphBreakPending();
 void editorClearParagraphBreak();
 
 // Line/viewport management
-void editorSetCharsPerLine(int cpl);
+// Word wrap to widthPx using advance(cp) for glyph widths. fontKey identifies the font
+// behind advance; a change in width or key re-wraps.
+void editorSetWrap(int widthPx, int fontKey, int (*advance)(uint32_t cp));
 void editorSetVisibleLines(int n);   // Tell editor how many lines are visible on screen
 int editorGetStoredVisibleLines();   // Get the last set visible lines count
 void editorRecalculateLines();

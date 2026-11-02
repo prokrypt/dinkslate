@@ -58,7 +58,6 @@ extern bool btShowAllDevices;
 extern int pairedKeyboardSelection;
 extern bool pairedForgetPending;
 extern Orientation currentOrientation;
-extern int charsPerLine;
 extern bool screenDirty;
 extern char renameBuffer[];
 extern int renameBufferLen;
