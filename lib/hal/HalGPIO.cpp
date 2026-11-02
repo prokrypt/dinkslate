@@ -3,10 +3,81 @@
 #include <SPI.h>
 #include <esp_sleep.h>
 #include <driver/gpio.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
 #ifdef XTEINK_X4_PRO
 #include <Wire.h>
 #include <driver/rtc_io.h>
 #endif
+
+namespace {
+// Debounced input states sampled by the input task, oldest first.
+QueueHandle_t inputQueue = nullptr;
+TaskHandle_t inputTask = nullptr;
+SemaphoreHandle_t loopWake = nullptr;
+constexpr int INPUT_QUEUE_LEN = 32;
+constexpr unsigned long DEBOUNCE_MS = 5;  // same as InputManager
+constexpr TickType_t TOUCH_POLL_TICKS = pdMS_TO_TICKS(15);
+constexpr gpio_num_t KEY_PINS[] = {static_cast<gpio_num_t>(InputManager::BUTTON_UP_PIN),
+                                   static_cast<gpio_num_t>(InputManager::BUTTON_DOWN_PIN),
+                                   static_cast<gpio_num_t>(InputManager::POWER_BUTTON_PIN)};
+constexpr gpio_num_t TOUCH_INT_PIN = static_cast<gpio_num_t>(InputManager::TOUCH_INT_PIN);
+
+// Level IRQs keep firing while the level holds, so the ISR masks its pin and the task
+// re-arms it at the opposite level once the input has settled.
+void inputIsr(void* pin) {
+  gpio_intr_disable(static_cast<gpio_num_t>(reinterpret_cast<intptr_t>(pin)));
+  BaseType_t woken = pdFALSE;
+  vTaskNotifyGiveFromISR(inputTask, &woken);
+  if (woken) portYIELD_FROM_ISR();
+}
+
+// The same register sets the IRQ type and the light-sleep wake level.
+void armPin(gpio_num_t pin, int activeLevel) {
+  gpio_wakeup_enable(pin, activeLevel == LOW ? GPIO_INTR_LOW_LEVEL : GPIO_INTR_HIGH_LEVEL);
+  gpio_intr_enable(pin);
+}
+
+void inputTaskMain(void* arg) {
+  auto* mgr = static_cast<InputManager*>(arg);
+  uint8_t sent = mgr->getCurrentState();
+  uint8_t last = sent;
+  unsigned long changedAt = millis();
+  TickType_t wait = 0;
+  for (;;) {
+    ulTaskNotifyTake(pdTRUE, wait);
+    const uint8_t state = mgr->getState();
+    if (state != last) {
+      last = state;
+      changedAt = millis();
+    }
+    const bool settled = millis() - changedAt >= DEBOUNCE_MS;
+    if (settled && state != sent && xQueueSend(inputQueue, &state, 0) == pdTRUE) {
+      sent = state;
+      HalGPIO::wakeLoop();
+    }
+    if (!settled || state != sent) {
+      wait = pdMS_TO_TICKS(DEBOUNCE_MS);
+      continue;
+    }
+    for (const gpio_num_t pin : KEY_PINS) armPin(pin, gpio_get_level(pin) ? LOW : HIGH);
+    wait = portMAX_DELAY;
+    if (!mgr->hasTouch()) continue;
+    if (mgr->isTouchHeld()) {
+      // GT911 sends frames for as long as a contact is down: poll them (and catch a
+      // lost lift-off) instead of taking an IRQ per frame.
+      wait = TOUCH_POLL_TICKS;
+      continue;
+    }
+    armPin(TOUCH_INT_PIN, mgr->touchIntActiveLevel());
+    // A frame latched between the read above and the re-arm sent its INT while masked,
+    // and GT911 holds further frames until this one is read: read it now.
+    if (mgr->getState() != last) wait = 0;
+  }
+}
+}  // namespace
 
 void HalGPIO::begin() {
 #ifdef XTEINK_X4_PRO
@@ -30,7 +101,54 @@ void HalGPIO::begin() {
 #endif
 }
 
-void HalGPIO::update() { inputMgr.update(); }
+void HalGPIO::update() {
+  if (!inputQueue) {
+    inputMgr.update();
+    return;
+  }
+  // One queued state per loop pass, so a press and release made while the loop was
+  // busy still show up as two separate edges.
+  uint8_t state;
+  inputMgr.applyState(xQueueReceive(inputQueue, &state, 0) == pdTRUE ? state : inputMgr.getCurrentState());
+}
+
+void HalGPIO::startInputTask() {
+  if (inputQueue) return;
+  loopWake = xSemaphoreCreateBinary();
+  inputQueue = xQueueCreate(INPUT_QUEUE_LEN, sizeof(uint8_t));
+  // Above the Arduino loop task (1), so sampling is never starved by loop work.
+  if (!loopWake || !inputQueue || xTaskCreate(inputTaskMain, "input", 3072, &inputMgr, 2, &inputTask) != pdPASS) {
+    if (loopWake) vSemaphoreDelete(loopWake);
+    if (inputQueue) vQueueDelete(inputQueue);
+    loopWake = nullptr;
+    inputQueue = nullptr;  // fall back to sampling on the loop
+    return;
+  }
+  gpio_install_isr_service(0);  // no IRAM flag: a level IRQ held off by a flash write still fires after
+  esp_sleep_enable_gpio_wakeup();
+  for (const gpio_num_t pin : KEY_PINS) {
+    gpio_isr_handler_add(pin, inputIsr, reinterpret_cast<void*>(static_cast<intptr_t>(pin)));
+  }
+  if (inputMgr.hasTouch()) {
+    gpio_isr_handler_add(TOUCH_INT_PIN, inputIsr, reinterpret_cast<void*>(static_cast<intptr_t>(TOUCH_INT_PIN)));
+  }
+  xTaskNotifyGive(inputTask);  // first pass samples and arms every pin
+}
+
+void HalGPIO::waitForInput(const uint32_t timeoutMs) {
+  if (!loopWake) {
+    delay(timeoutMs);
+    return;
+  }
+  if (uxQueueMessagesWaiting(inputQueue)) return;
+  xSemaphoreTake(loopWake, pdMS_TO_TICKS(timeoutMs));
+}
+
+void HalGPIO::wakeLoop() {
+  if (loopWake) xSemaphoreGive(loopWake);
+}
+
+bool HalGPIO::isAnyPressed() const { return inputMgr.getCurrentState() != 0; }
 
 bool HalGPIO::isPressed(uint8_t buttonIndex) const { return inputMgr.isPressed(buttonIndex); }
 
@@ -45,10 +163,16 @@ bool HalGPIO::wasAnyReleased() const { return inputMgr.wasAnyReleased(); }
 unsigned long HalGPIO::getHeldTime() const { return inputMgr.getHeldTime(); }
 
 void HalGPIO::startDeepSleep() {
-  // Ensure that the power button has been released to avoid immediately turning back on if you're holding it
-  while (inputMgr.isPressed(BTN_POWER)) {
+  // Stop the input task first: it would re-arm light-sleep wake pins and poll touch
+  // while its rail goes down.
+  if (inputTask) vTaskSuspend(inputTask);
+  for (const gpio_num_t pin : KEY_PINS) gpio_wakeup_disable(pin);
+  gpio_wakeup_disable(TOUCH_INT_PIN);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+  // Ensure that the power button has been released to avoid immediately turning back on if you're holding it.
+  // Read the pin directly: InputManager's state is fed by the (now stopped) input task.
+  while (digitalRead(InputManager::POWER_BUTTON_PIN) == LOW) {
     delay(50);
-    inputMgr.update();
   }
 #ifdef XTEINK_X4_PRO
   // Keep the master rail HIGH (else the next press cold-boots), cut touch and SD.

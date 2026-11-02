@@ -98,34 +98,38 @@ void InputManager::update() {
   const unsigned long currentTime = millis();
   const uint8_t state = getState();
 
-  // Always clear events first
-  pressedEvents = 0;
-  releasedEvents = 0;
-
   // Debounce
   if (state != lastState) {
     lastDebounceTime = currentTime;
     lastState = state;
   }
 
-  if ((currentTime - lastDebounceTime) > DEBOUNCE_DELAY) {
-    if (state != currentState) {
-      // Calculate pressed and released events
-      pressedEvents = state & ~currentState;
-      releasedEvents = currentState & ~state;
+  applyState((currentTime - lastDebounceTime) > DEBOUNCE_DELAY ? state : currentState);
+}
 
-      // If pressing buttons and wasn't before, start recording time
-      if (pressedEvents > 0 && currentState == 0) {
-        buttonPressStart = currentTime;
-      }
+void InputManager::applyState(const uint8_t state) {
+  const unsigned long currentTime = millis();
 
-      // If releasing a button and no other buttons being pressed, record finish time
-      if (releasedEvents > 0 && state == 0) {
-        buttonPressFinish = currentTime;
-      }
+  // Always clear events first
+  pressedEvents = 0;
+  releasedEvents = 0;
 
-      currentState = state;
+  if (state != currentState) {
+    // Calculate pressed and released events
+    pressedEvents = state & ~currentState;
+    releasedEvents = currentState & ~state;
+
+    // If pressing buttons and wasn't before, start recording time
+    if (pressedEvents > 0 && currentState == 0) {
+      buttonPressStart = currentTime;
     }
+
+    // If releasing a button and no other buttons being pressed, record finish time
+    if (releasedEvents > 0 && state == 0) {
+      buttonPressFinish = currentTime;
+    }
+
+    currentState = state;
   }
 }
 
@@ -177,10 +181,9 @@ bool InputManager::isPowerButtonPressed() const {
 namespace {
 constexpr int TOUCH_SDA = 39;
 constexpr int TOUCH_SCL = 38;
-constexpr int TOUCH_INT = 10;
+constexpr int TOUCH_INT = InputManager::TOUCH_INT_PIN;
 constexpr int TOUCH_RST = 4;
 constexpr int TOUCH_RAIL = 2;
-constexpr unsigned long TOUCH_POLL_MS = 15;
 }  // namespace
 
 void InputManager::beginTouch() {
@@ -207,6 +210,15 @@ void InputManager::beginTouch() {
       Wire.beginTransmission(addr);
       if (Wire.endTransmission() == 0) {
         touchAddr = addr;
+        // Module_Switch1 (0x804D) bits 0-1 pick the INT trigger: 0 rising, 1 falling,
+        // 2 low, 3 high. Read only: a config write needs a checksum and can break touch.
+        Wire.beginTransmission(addr);
+        Wire.write(0x80);
+        Wire.write(0x4D);
+        if (Wire.endTransmission(false) == 0 && Wire.requestFrom(addr, static_cast<uint8_t>(1)) == 1) {
+          const uint8_t trigger = Wire.read() & 0x03;
+          touchIntLevel = (trigger == 1 || trigger == 2) ? LOW : HIGH;
+        }
         return;
       }
     }
@@ -214,8 +226,7 @@ void InputManager::beginTouch() {
 }
 
 uint8_t InputManager::pollTouch() {
-  if (!touchAddr || millis() - lastTouchPoll < TOUCH_POLL_MS) return touchState;
-  lastTouchPoll = millis();
+  if (!touchAddr) return touchState;
 
   Wire.beginTransmission(touchAddr);
   Wire.write(0x81);

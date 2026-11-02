@@ -8,7 +8,7 @@ name: Build (CI)
 # To flash the artifact on macOS (no local toolchain needed):
 #   1. Download the "microslate-firmware" artifact and unzip it.
 #   2. Open https://espressif.github.io/esptool-js/ in Chrome, Connect, and flash
-#      microslate-ci.bin at offset 0x0.  (Or: esptool.py --chip esp32c3 write_flash 0x0 microslate-ci.bin)
+#      microslate-x4pro-ci.bin at offset 0x0.  (Or: esptool.py --chip esp32s3 write_flash 0x0 microslate-x4pro-ci.bin)
 # Rollback at any time by reinstalling the official build from typeslate.com/tools/microslate.
 
 on:
@@ -40,20 +40,12 @@ jobs:
         run: pip install platformio
 
       - name: Build firmware
-        run: pio run -e xteink_x4 -e xteink_x4pro
+        run: pio run -e xteink_x4pro
 
       - name: Merge standalone binary
         run: |
           pip install esptool
           BOOT_APP0=$(find ~/.platformio -name "boot_app0.bin" | head -1)
-
-          esptool.py --chip esp32c3 merge_bin \
-            --flash_mode dio --flash_size 16MB \
-            -o microslate-ci.bin \
-            0x0     .pio/build/xteink_x4/bootloader.bin \
-            0x8000  .pio/build/xteink_x4/partitions.bin \
-            0xe000  "$BOOT_APP0" \
-            0x10000 .pio/build/xteink_x4/firmware.bin
 
           esptool.py --chip esp32s3 merge_bin \
             --flash_mode dio --flash_size 16MB \
@@ -68,8 +60,6 @@ jobs:
         with:
           name: microslate-firmware
           path: |
-            microslate-ci.bin
-            .pio/build/xteink_x4/firmware.bin
             microslate-x4pro-ci.bin
             .pio/build/xteink_x4pro/firmware.bin
           if-no-files-found: error
