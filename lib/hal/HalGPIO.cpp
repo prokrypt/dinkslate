@@ -168,7 +168,9 @@ void HalGPIO::startDeepSleep() {
   if (inputTask) vTaskSuspend(inputTask);
   for (const gpio_num_t pin : KEY_PINS) gpio_wakeup_disable(pin);
   gpio_wakeup_disable(TOUCH_INT_PIN);
-  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+  // Auto light sleep leaves its GPIO and timer wake sources armed; the timer alone would
+  // wake deep sleep within ms (seen in x4prosim). Only the ext0 power key below may wake.
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
   // Ensure that the power button has been released to avoid immediately turning back on if you're holding it.
   // Read the pin directly: InputManager's state is fed by the (now stopped) input task.
   while (digitalRead(InputManager::POWER_BUTTON_PIN) == LOW) {
