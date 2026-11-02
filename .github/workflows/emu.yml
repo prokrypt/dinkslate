@@ -14,12 +14,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {ref: claude/project-thread-dx71da, out: emu-out-batt}
-          - {ref: claude/project-thread-nxbsj5, out: emu-out-stack}
+          - {ref: claude/project-thread-hbaiej, merge: origin/claude/project-thread-dx71da, out: emu-out-2x6}
+          - {ref: claude/project-thread-hbaiej, merge: origin/claude/project-thread-55dnl2 1910f35, out: emu-out-456}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ matrix.ref }}
+          fetch-depth: 0
+      # Bisect the stack's blank-boot: PR 6 + PR 2 vs PR 6 + PR 4 + PR 5 (HalGPIO conflict = keep both sides).
+      - run: |
+          git -c user.name=ci -c user.email=ci@localhost merge --no-edit ${{ matrix.merge }} || {
+            sed -i -e '/^<<<<<<< /d' -e '/^=======$/d' -e '/^>>>>>>> /d' lib/hal/HalGPIO.cpp
+            git add -A && git -c user.name=ci -c user.email=ci@localhost commit -qm merge; }
+          git log --oneline -5
       - uses: actions/cache@v4
         with:
           path: |
