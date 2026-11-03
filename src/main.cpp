@@ -665,6 +665,12 @@ void loop() {
       stopDeviceScan();
     }
   }
+  // Screen-local modes must not outlive their screen: Back / short Power leave
+  // the editor or browser without going through the key handlers that clear them.
+  if (currentState != lastState) {
+    editorFindMode = false;
+    deleteConfirmPending = false;
+  }
   lastState = currentState;
 
   // Process BLE (connection handling, scan completion detection)
