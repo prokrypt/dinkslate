@@ -3,7 +3,7 @@ name: emu bins (scratch)
 # binaries to the emu-out branch so a sandbox without artifact-storage access can git-fetch them.
 on:
   push:
-    branches: [emu-bins]
+    branches: [emu-bins, emu-bins-untitled]
 permissions:
   contents: write
   actions: read
@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: claude/touch-input-wrkw41
+          ref: emu-src-untitled
       - uses: actions/cache@v4
         with:
           path: |
@@ -42,7 +42,7 @@ jobs:
             gh api "repos/prokrypt/CrossDink/actions/artifacts/$id/zip" > cd.zip && unzip -o cd.zip -d out/crossdink/$n || echo "crossdink $n fetch failed" >> out/errors.txt
           done
           cd out
-          git init -q -b emu-out-touch
+          git init -q -b emu-out-untitled
           git add -A
           git -c user.name=ci -c user.email=ci@localhost commit -qm "bins $(cat source-sha.txt)"
-          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" emu-out-touch
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" emu-out-untitled
