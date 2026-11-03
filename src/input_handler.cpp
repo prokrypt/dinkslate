@@ -291,6 +291,7 @@ static void ensureNewNoteHasFile() {
   char filename[MAX_FILENAME_LEN];
   deriveUniqueFilename(editorGetCurrentTitle(), filename, MAX_FILENAME_LEN);
   editorSetCurrentFile(filename);
+  saveCurrentFile();  // create it now so the browser lists it, as a confirmed title does
 }
 
 // Handle title edit input
