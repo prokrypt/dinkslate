@@ -283,6 +283,16 @@ static void openTitleEdit(const char* currentTitle, UIState returnTo) {
   screenDirty = true;
 }
 
+// A new note has no file until its title is confirmed. If the edit is cancelled
+// (Esc / Back) or confirmed empty, name it "Untitled" anyway: autosave, Ctrl+S,
+// Back and sleep all skip an unnamed note, so everything typed would be lost.
+static void ensureNewNoteHasFile() {
+  if (renameReturnState != UIState::TEXT_EDITOR || editorGetCurrentFile()[0] != '\0') return;
+  char filename[MAX_FILENAME_LEN];
+  deriveUniqueFilename(editorGetCurrentTitle(), filename, MAX_FILENAME_LEN);
+  editorSetCurrentFile(filename);
+}
+
 // Handle title edit input
 static void handleRenameKey(uint8_t keyCode, uint8_t modifiers) {
   if (keyCode == HID_KEY_ENTER) {
@@ -306,12 +316,14 @@ static void handleRenameKey(uint8_t keyCode, uint8_t modifiers) {
         updateFileTitle(files[selectedFileIndex].filename, renameBuffer);
       }
     }
+    ensureNewNoteHasFile();
     currentState = renameReturnState;
     screenDirty = true;
     return;
   }
 
   if (keyCode == HID_KEY_ESCAPE) {
+    ensureNewNoteHasFile();
     currentState = renameReturnState;
     screenDirty = true;
     return;
