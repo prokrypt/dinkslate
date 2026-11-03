@@ -77,11 +77,14 @@ static int utf8CountChars(int start, int end) {
   return count;
 }
 
+// Last caret position that still belongs to this line. The next line's start is
+// never it (a caret there renders on the next line), so step back one character:
+// over the newline, over a wrap's trailing space, or before the last glyph of a
+// mid-word wrap.
 static int lineContentEnd(int lineIndex) {
-  int lineStart = linePositions[lineIndex];
-  int lineEnd = (lineIndex + 1 < lineCount) ? linePositions[lineIndex + 1] : (int)textLength;
-  if (lineEnd > lineStart && textBuffer[lineEnd - 1] == '\n') lineEnd--;
-  return lineEnd;
+  if (lineIndex + 1 >= lineCount) return (int)textLength;
+  int lineEnd = linePositions[lineIndex + 1];
+  return lineEnd > linePositions[lineIndex] ? utf8PrevPos(lineEnd) : lineEnd;
 }
 
 static int byteOffsetForColumn(int lineStart, int lineEnd, int col) {
@@ -384,15 +387,7 @@ void editorMoveCursorHome(bool extend) {
 
 void editorMoveCursorEnd(bool extend) {
   updateSelectionAnchor(extend);
-  int lineEnd;
-  if (cursorLine + 1 < lineCount) {
-    lineEnd = linePositions[cursorLine + 1];
-    // Step back over newline if present
-    if (lineEnd > 0 && textBuffer[lineEnd - 1] == '\n') lineEnd--;
-  } else {
-    lineEnd = (int)textLength;
-  }
-  cursorPosition = lineEnd;
+  cursorPosition = lineContentEnd(cursorLine);
   editorRecalculateLines();
   ensureCursorVisible(storedVisibleLines);
 }
