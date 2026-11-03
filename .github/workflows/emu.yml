@@ -1,0 +1,15 @@
+name: emu bins (scratch)
+# Scratch: builds feat/x4pro and fetches CrossDink's X4 Pro builds, then commits the
+# binaries to the emu-out branch so a sandbox without artifact-storage access can git-fetch them.
+on:
+  push:
+    branches: [emu-src-files]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  bins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
