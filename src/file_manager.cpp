@@ -15,13 +15,6 @@ static int fileCount = 0;
 extern UIState currentState;
 extern int selectedFileIndex;
 
-// Put the browser highlight on `filename` (no change if it is not listed).
-static void selectFile(const char* filename) {
-  for (int i = 0; i < fileCount; i++) {
-    if (strcmp(fileList[i].filename, filename) == 0) { selectedFileIndex = i; return; }
-  }
-}
-
 // --- Monotonic clock for file timestamps ---------------------------------
 // The X4 has no RTC, so without this every file would get SdFat's identical
 // default stamp and the browser couldn't tell new notes from old. We keep a
@@ -182,10 +175,11 @@ void recoverTempFiles() {
   }
 }
 
-void refreshFileList() {
-  // The list is re-sorted below, so remember the highlighted note by name.
+void refreshFileList(const char* select) {
+  // The list is re-sorted below, so track the note to highlight by name.
   char keep[MAX_FILENAME_LEN] = "";
-  if (selectedFileIndex >= 0 && selectedFileIndex < fileCount) strcpy(keep, fileList[selectedFileIndex].filename);
+  if (select) strncpy(keep, select, sizeof(keep) - 1);
+  else if (selectedFileIndex >= 0 && selectedFileIndex < fileCount) strcpy(keep, fileList[selectedFileIndex].filename);
   fileCount = 0;
 
   auto root = SdMan.open("/notes");
@@ -236,7 +230,9 @@ void refreshFileList() {
   }
 
   if (selectedFileIndex >= fileCount) selectedFileIndex = fileCount > 0 ? fileCount - 1 : 0;
-  selectFile(keep);
+  for (int i = 0; i < fileCount; i++) {
+    if (strcmp(fileList[i].filename, keep) == 0) { selectedFileIndex = i; break; }
+  }
 
   DBG_PRINTF("File listing: %d files found\n", fileCount);
 }
@@ -312,10 +308,7 @@ void saveCurrentFile(bool refreshList) {
 
   editorSetUnsavedChanges(false);
   clockPersist();   // keep timestamps monotonic across reboots
-  if (refreshList) {
-    refreshFileList();
-    selectFile(filename);   // the saved note is now newest (row 0)
-  }
+  if (refreshList) refreshFileList(filename);   // the saved note is now newest (row 0)
   SdMan.sleep();
   DBG_PRINTF("Saved: %s\n", filename);
 }
@@ -343,8 +336,7 @@ void updateFileTitle(const char* filename, const char* newTitle) {
     }
   }
 
-  refreshFileList();
-  selectFile(newFilename);
+  refreshFileList(newFilename);
   SdMan.sleep();
 }
 

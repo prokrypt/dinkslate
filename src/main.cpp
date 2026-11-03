@@ -478,7 +478,8 @@ static void processPhysicalButtons() {
         enqueueKeyEvent(HID_KEY_ENTER, 0, false);
       }
       if (btnBack && !btnBackLast) {
-        if (editorHasUnsavedChanges()) saveCurrentFile();
+        if (editorHasUnsavedChanges()) saveCurrentFile(false);
+        refreshFileList(editorGetCurrentFile());   // an autosave may have re-ordered the list
         currentState = UIState::FILE_BROWSER;
         screenDirty = true;
       }
