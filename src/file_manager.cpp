@@ -313,6 +313,11 @@ void createNewFile() {
 // Rename a file on disk to match a new title, updating editor state if needed.
 void updateFileTitle(const char* filename, const char* newTitle) {
   char newFilename[MAX_FILENAME_LEN];
+  // Same name as now (FAT is case-insensitive): nothing to do. Asking
+  // deriveUniqueFilename would see this very file as a collision and rename
+  // it to a _2 suffix.
+  titleToFilename(newTitle, newFilename, MAX_FILENAME_LEN);
+  if (strcasecmp(newFilename, filename) == 0) return;
   deriveUniqueFilename(newTitle, newFilename, MAX_FILENAME_LEN);
 
   if (strcmp(newFilename, filename) != 0) {
