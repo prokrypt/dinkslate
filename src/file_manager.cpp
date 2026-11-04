@@ -13,6 +13,7 @@ static int fileCount = 0;
 
 // Shared state
 extern UIState currentState;
+extern int selectedFileIndex;
 
 // --- Monotonic clock for file timestamps ---------------------------------
 // The X4 has no RTC, so without this every file would get SdFat's identical
@@ -174,7 +175,11 @@ void recoverTempFiles() {
   }
 }
 
-void refreshFileList() {
+void refreshFileList(const char* select) {
+  // The list is re-sorted below, so track the note to highlight by name.
+  char keep[MAX_FILENAME_LEN] = "";
+  if (select) strncpy(keep, select, sizeof(keep) - 1);
+  else if (selectedFileIndex >= 0 && selectedFileIndex < fileCount) strcpy(keep, fileList[selectedFileIndex].filename);
   fileCount = 0;
 
   auto root = SdMan.open("/notes");
@@ -236,6 +241,11 @@ void refreshFileList() {
       j--;
     }
     fileList[j + 1] = key;
+  }
+
+  if (selectedFileIndex >= fileCount) selectedFileIndex = fileCount > 0 ? fileCount - 1 : 0;
+  for (int i = 0; i < fileCount; i++) {
+    if (strcmp(fileList[i].filename, keep) == 0) { selectedFileIndex = i; break; }
   }
 
   DBG_PRINTF("File listing: %d files found\n", fileCount);
@@ -320,7 +330,7 @@ void saveCurrentFile(bool refreshList) {
 
   editorSetUnsavedChanges(false);
   clockPersist();   // keep timestamps monotonic across reboots
-  if (refreshList) refreshFileList();
+  if (refreshList) refreshFileList(filename);   // the saved note is now newest (row 0)
   SdMan.sleep();
   DBG_PRINTF("Saved: %s\n", filename);
 }
@@ -353,7 +363,7 @@ void updateFileTitle(const char* filename, const char* newTitle) {
     }
   }
 
-  refreshFileList();
+  refreshFileList(newFilename);
   SdMan.sleep();
 }
 

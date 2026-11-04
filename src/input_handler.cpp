@@ -234,7 +234,8 @@ static void handleEditorKey(uint8_t keyCode, uint8_t modifiers) {
 
   // ESC = save and return to file browser
   if (keyCode == HID_KEY_ESCAPE) {
-    if (editorHasUnsavedChanges()) saveCurrentFile();
+    if (editorHasUnsavedChanges()) saveCurrentFile(false);
+    refreshFileList(editorGetCurrentFile());   // an autosave may have re-ordered the list
     currentState = UIState::FILE_BROWSER;
     screenDirty = true;
     return;
