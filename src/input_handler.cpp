@@ -14,6 +14,7 @@ extern bool autoReconnectEnabled;
 extern bool darkMode;
 extern bool cleanMode;
 extern bool deleteConfirmPending;
+extern bool loadFailedNotice;
 extern WritingMode writingMode;
 extern FontSize fontSize;
 extern bool showWordCount;
@@ -375,6 +376,7 @@ static void dispatchEvent(const KeyEvent& event) {
 
     case UIState::FILE_BROWSER: {
       int fc = getFileCount();
+      if (loadFailedNotice) { loadFailedNotice = false; screenDirty = true; }
 
       // Delete confirmation pending — Enter confirms, anything else cancels
       if (deleteConfirmPending) {
@@ -398,7 +400,7 @@ static void dispatchEvent(const KeyEvent& event) {
         screenDirty = true;
       } else if (event.keyCode == HID_KEY_ENTER && fc > 0) {
         FileInfo* files = getFileList();
-        loadFile(files[selectedFileIndex].filename);
+        if (!loadFile(files[selectedFileIndex].filename)) loadFailedNotice = true;
         screenDirty = true;
       } else if (isCtrl(event.modifiers) && !isAltGr(event.modifiers) && event.keyCode == HID_KEY_N) {
         if (fc > 0) {
