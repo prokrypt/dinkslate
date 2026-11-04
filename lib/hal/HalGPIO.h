@@ -57,6 +57,15 @@ class HalGPIO {
   bool wasReleased(uint8_t buttonIndex) const;
   bool wasAnyReleased() const;
   unsigned long getHeldTime() const;
+  bool isAnyPressed() const;
+
+  // Sample input on its own task, woken by key / touch interrupts, and queue every
+  // debounced change, so presses made while the loop is busy arrive in order.
+  void startInputTask();
+  // Idle wait for the loop: returns as soon as input is queued or wakeLoop() is called.
+  void waitForInput(uint32_t timeoutMs);
+  // Ends the loop's waitForInput() early. Safe from any task (not from an ISR).
+  static void wakeLoop();
 
   // Setup wake up GPIO and enter deep sleep
   void startDeepSleep();

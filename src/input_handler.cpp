@@ -6,6 +6,7 @@
 #include "keyboard_layout.h"
 
 #include <Arduino.h>
+#include <HalGPIO.h>
 #include <SDCardManager.h>
 
 // External variables
@@ -33,6 +34,8 @@ static KeyEvent inputQueue[INPUT_QUEUE_SIZE];
 static int queueHead = 0;
 static int queueTail = 0;
 static volatile bool queueFull = false;
+// Spinlock, not noInterrupts(): BLE notify (host task) and the loop run on different S3 cores.
+static portMUX_TYPE queueMux = portMUX_INITIALIZER_UNLOCKED;
 
 // --- CapsLock state ---
 static bool capsLockOn = false;
@@ -77,7 +80,7 @@ static bool isQueueEmpty() {
 }
 
 void enqueueKeyEvent(uint8_t keyCode, uint8_t modifiers, bool pressed) {
-  noInterrupts();
+  portENTER_CRITICAL(&queueMux);
   if (!queueFull) {
     inputQueue[queueHead].keyCode = keyCode;
     inputQueue[queueHead].modifiers = modifiers;
@@ -85,18 +88,19 @@ void enqueueKeyEvent(uint8_t keyCode, uint8_t modifiers, bool pressed) {
     queueHead = (queueHead + 1) % INPUT_QUEUE_SIZE;
     if (queueHead == queueTail) queueFull = true;
   }
-  interrupts();
+  portEXIT_CRITICAL(&queueMux);
+  HalGPIO::wakeLoop();
 }
 
 static KeyEvent dequeueKeyEvent() {
   KeyEvent event = {0, 0, false};
-  noInterrupts();
+  portENTER_CRITICAL(&queueMux);
   if (!isQueueEmpty()) {
     event = inputQueue[queueTail];
     queueTail = (queueTail + 1) % INPUT_QUEUE_SIZE;
     queueFull = false;
   }
-  interrupts();
+  portEXIT_CRITICAL(&queueMux);
   return event;
 }
 

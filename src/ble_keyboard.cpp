@@ -2,6 +2,8 @@
 #include "input_handler.h"
 #include "sd_backup.h"
 
+#include <HalGPIO.h>
+
 #include <NimBLEDevice.h>
 #include <Preferences.h>
 
@@ -214,6 +216,7 @@ static class ScanCallbacks : public NimBLEScanCallbacks {
     upsertDevice(info);
     extern bool screenDirty;
     screenDirty = true;
+    HalGPIO::wakeLoop();  // set from a BLE task: end the loop's idle wait
   }
 } scanCallbacks;
 
@@ -255,6 +258,7 @@ static class ClientCallbacks : public NimBLEClientCallbacks {
     currentPasskey = pin;
     extern bool screenDirty;
     screenDirty = true;
+    HalGPIO::wakeLoop();  // set from a BLE task: end the loop's idle wait
     NimBLEDevice::injectConfirmPasskey(connInfo, true);
   }
 
@@ -272,6 +276,7 @@ static class ClientCallbacks : public NimBLEClientCallbacks {
     currentPasskey = 0;
     extern bool screenDirty;
     screenDirty = true;
+    HalGPIO::wakeLoop();  // set from a BLE task: end the loop's idle wait
   }
 } clientCallbacks;
 
