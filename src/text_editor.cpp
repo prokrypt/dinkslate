@@ -117,7 +117,6 @@ static void deleteByteRange(int start, int end) {
   memmove(textBuffer + start, textBuffer + end, textLength - end);
   textLength -= (end - start);
   cursorPosition = start;
-  selectionAnchor = -1;  // any edit ends the selection, else an empty one goes stale
   textBuffer[textLength] = '\0';
   unsavedChanges = true;
   lineBreaksDirty = true;
@@ -280,7 +279,6 @@ void editorInsertText(const char* text) {
           textLength - cursorPosition);
   memcpy(textBuffer + cursorPosition, text, insertLen);
   cursorPosition += insertLen;
-  selectionAnchor = -1;
   textLength += insertLen;
   textBuffer[textLength] = '\0';
   unsavedChanges = true;
@@ -500,11 +498,7 @@ void editorSetWrap(int widthPx, int fontKey, int (*advance)(uint32_t cp)) {
 }
 
 void editorSetVisibleLines(int n) {
-  if (n <= 0 || n == storedVisibleLines) return;
-  storedVisibleLines = n;
-  // The count changed (font, orientation, writing/clean mode, find bar), so the
-  // viewport placed with the old count may leave the cursor off screen.
-  ensureCursorVisible(n);
+  if (n > 0) storedVisibleLines = n;
 }
 
 int editorGetStoredVisibleLines() {
