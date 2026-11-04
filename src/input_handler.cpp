@@ -127,6 +127,16 @@ static void handleFindKey(uint8_t keyCode, uint8_t modifiers) {
     screenDirty = true;
     return;
   }
+  // The layout lookup ignores Ctrl, so a chord would type its letter into the
+  // query. Swallow chords; Ctrl+F starts the query over, as it opened the bar.
+  if (isCtrl(modifiers) && !isAltGr(modifiers)) {
+    if (keyCode == HID_KEY_F) {
+      findBuffer[0] = '\0';
+      findBufferLen = 0;
+      screenDirty = true;
+    }
+    return;
+  }
   const char* text = keyboardLayoutText(currentKeyboardLayout, keyCode, modifiers, capsLockOn);
   if (text != nullptr) {
     int tlen = (int)strlen(text);
@@ -326,7 +336,9 @@ static void handleRenameKey(uint8_t keyCode, uint8_t modifiers) {
     return;
   }
 
-  // Allow all printable characters in a title (including spaces)
+  // Allow all printable characters in a title (including spaces); Ctrl chords
+  // would otherwise type their letter, since the layout lookup ignores Ctrl.
+  if (isCtrl(modifiers) && !isAltGr(modifiers)) return;
   char c = hidToAscii(keyCode, modifiers);
   if (c != 0 && c >= ' ' && renameBufferLen < MAX_TITLE_LEN - 1) {
     renameBuffer[renameBufferLen++] = c;
