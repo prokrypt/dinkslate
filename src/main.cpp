@@ -383,8 +383,9 @@ void enterDeepSleep(SleepReason reason) {
   // Render the sleep screen before entering deep sleep
   renderSleepScreen();
 
-  // Save any unsaved work
-  if (currentState == UIState::TEXT_EDITOR && editorHasUnsavedChanges()) {
+  // Save any unsaved work. No state check: the title screen (Ctrl+N) holds the
+  // editor's unsaved text too, and saveCurrentFile is a no-op without a file.
+  if (editorHasUnsavedChanges()) {
     saveCurrentFile();
   }
 
@@ -447,9 +448,7 @@ static void processPhysicalButtons() {
     if (!sleepTriggered && duration > 50 && duration < 1000) {
       // Short press - go to main menu (except when already there)
       if (currentState != UIState::MAIN_MENU) {
-        if (currentState == UIState::TEXT_EDITOR && editorHasUnsavedChanges()) {
-          saveCurrentFile();
-        }
+        if (editorHasUnsavedChanges()) saveCurrentFile();
         currentState = UIState::MAIN_MENU;
         screenDirty = true;
       }
@@ -471,9 +470,7 @@ static void processPhysicalButtons() {
     if (millis() - backPressStart > 5000) {
       restartTriggered = true;
       DBG_PRINTLN("BACK held for 5s — restarting device...");
-      if (currentState == UIState::TEXT_EDITOR && editorHasUnsavedChanges()) {
-        saveCurrentFile();
-      }
+      if (editorHasUnsavedChanges()) saveCurrentFile();
       delay(100);
       ESP.restart();
     }
@@ -775,8 +772,9 @@ void loop() {
   // Auto-save: hybrid idle + hard cap for crash protection.
   // - Saves after 10s of no keystrokes (catches natural pauses between sentences)
   // - Hard cap every 2min during continuous typing (never lose more than 2min of work)
+  // Runs on the title screen too (Ctrl+N from the editor keeps the unsaved text).
   static unsigned long lastAutoSaveMs = 0;
-  if (currentState == UIState::TEXT_EDITOR
+  if ((currentState == UIState::TEXT_EDITOR || currentState == UIState::RENAME_FILE)
       && editorHasUnsavedChanges()
       && editorGetCurrentFile()[0] != '\0') {
     unsigned long now = millis();
