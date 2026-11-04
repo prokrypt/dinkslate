@@ -370,6 +370,9 @@ static void processPhysicalButtons() {
         if (currentState == UIState::TEXT_EDITOR && editorHasUnsavedChanges()) {
           saveCurrentFile();
         }
+        // Leaving the sync screen must also drop WiFi, or the radio stays on and
+        // isWifiSyncActive() blocks the idle deep sleep for good.
+        if (isWifiSyncActive()) wifiSyncStop();
         currentState = UIState::MAIN_MENU;
         screenDirty = true;
       }
