@@ -264,12 +264,6 @@ static void handleEditorKey(uint8_t keyCode, uint8_t modifiers) {
     case HID_KEY_DELETE:    editorDeleteForward();   screenDirty = true; return;
   }
 
-  // CapsLock toggle
-  if (keyCode == HID_KEY_CAPSLOCK) {
-    capsLockOn = !capsLockOn;
-    return;
-  }
-
   // Printable character
   const char* text = keyboardLayoutText(currentKeyboardLayout, keyCode, modifiers, capsLockOn);
   if (text != nullptr) {
@@ -355,6 +349,13 @@ static void handleRenameKey(uint8_t keyCode, uint8_t modifiers) {
 
 static void dispatchEvent(const KeyEvent& event) {
   if (!event.pressed) return;
+
+  // CapsLock toggles on every screen so our state tracks the keyboard's LED;
+  // handled only in the editor, a press on the title screen or find bar was lost.
+  if (event.keyCode == HID_KEY_CAPSLOCK) {
+    capsLockOn = !capsLockOn;
+    return;
+  }
 
   switch (currentState) {
     case UIState::MAIN_MENU: {
