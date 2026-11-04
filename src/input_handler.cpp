@@ -104,6 +104,13 @@ static KeyEvent dequeueKeyEvent() {
   return event;
 }
 
+// Light sleep: drop queued keys so the waking key types nothing; true if one was a press.
+bool discardKeyEvents() {
+  bool pressed = false;
+  while (!isQueueEmpty()) pressed |= dequeueKeyEvent().pressed;
+  return pressed;
+}
+
 char hidToAscii(uint8_t hid, uint8_t modifiers) {
   const char* text = keyboardLayoutQwertyText(hid, modifiers, capsLockOn);
   if (!text || text[0] == '\0' || text[1] != '\0') return 0;
