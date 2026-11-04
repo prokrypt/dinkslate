@@ -117,6 +117,7 @@ static void deleteByteRange(int start, int end) {
   memmove(textBuffer + start, textBuffer + end, textLength - end);
   textLength -= (end - start);
   cursorPosition = start;
+  selectionAnchor = -1;  // any edit ends the selection, else an empty one goes stale
   textBuffer[textLength] = '\0';
   unsavedChanges = true;
   lineBreaksDirty = true;
@@ -279,6 +280,7 @@ void editorInsertText(const char* text) {
           textLength - cursorPosition);
   memcpy(textBuffer + cursorPosition, text, insertLen);
   cursorPosition += insertLen;
+  selectionAnchor = -1;
   textLength += insertLen;
   textBuffer[textLength] = '\0';
   unsavedChanges = true;
