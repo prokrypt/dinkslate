@@ -641,12 +641,45 @@ static void dispatchEvent(const KeyEvent& event) {
   }
 }
 
+// Typematic repeat for the BLE keyboard: HID keyboards report state changes only, so the
+// host repeats a held key. Same timing as the physical buttons in main.cpp.
+static KeyEvent repeatEvent = {0, 0, true};   // keyCode 0 = nothing held
+static unsigned long repeatDueMs = 0;
+
+static bool isRepeatable(uint8_t keyCode) {
+  switch (keyCode) {
+    case HID_KEY_LEFT: case HID_KEY_RIGHT: case HID_KEY_UP: case HID_KEY_DOWN:
+    case HID_KEY_HOME: case HID_KEY_END: case HID_KEY_BACKSPACE: case HID_KEY_DELETE:
+      return true;
+  }
+  return false;
+}
+
 int processAllInput() {
   int processedCount = 0;
   while (!isQueueEmpty()) {
     KeyEvent event = dequeueKeyEvent();
     dispatchEvent(event);
     processedCount++;
+    if (event.pressed) {
+      repeatEvent.keyCode = isRepeatable(event.keyCode) ? event.keyCode : 0;  // newest key down repeats
+      repeatEvent.modifiers = event.modifiers;
+      repeatDueMs = millis() + 400;
+    } else if (event.keyCode == repeatEvent.keyCode) {
+      repeatEvent.keyCode = 0;
+    }
+  }
+  // Text screens only: in Settings a held Right/Left would flip Dark Mode
+  // (whole-screen inversions) or cycle orientation every frame, and in
+  // Bluetooth it restarts scans.
+  const bool repeatState = currentState == UIState::TEXT_EDITOR ||
+                           currentState == UIState::RENAME_FILE ||
+                           currentState == UIState::FILE_BROWSER;
+  if (repeatEvent.keyCode != 0 && repeatState &&
+      (long)(millis() - repeatDueMs) >= 0) {
+    dispatchEvent(repeatEvent);
+    processedCount++;
+    repeatDueMs = millis() + 80;
   }
   return processedCount;
 }

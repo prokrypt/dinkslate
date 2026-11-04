@@ -120,6 +120,15 @@ static void pruneStaleDevices() {
   }
 }
 
+// A keyboard that drops mid-hold never sends its releases; emit them so the host-side
+// key repeat (input_handler.cpp) stops.
+static void releaseHeldKeys() {
+  for (int i = 2; i < 8; i++) {
+    if (lastReport[i] != 0) enqueueKeyEvent(lastReport[i], 0, false);
+  }
+  memset(lastReport, 0, 8);
+}
+
 // Keyboard notification callback
 static void onKeyboardNotify(NimBLERemoteCharacteristic* pRemChar,
                               uint8_t* pData, size_t length, bool isNotify) {
@@ -222,7 +231,7 @@ static class ClientCallbacks : public NimBLEClientCallbacks {
     pInputReportChar = nullptr;
     pRemoteService = nullptr;
     authSuccess = false;
-    memset(lastReport, 0, 8);
+    releaseHeldKeys();
     lastReconnectAttempt = millis();
     DBG_PRINTLN("[BLE] Disconnected");
   }
@@ -929,7 +938,7 @@ void disconnectCurrentDevice() {
   bleState = BLEState::DISCONNECTED;
   pInputReportChar = nullptr;
   pRemoteService = nullptr;
-  memset(lastReport, 0, 8);
+  releaseHeldKeys();
   lastReconnectAttempt = millis();
   keyboardAddress = "";
 }
