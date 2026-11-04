@@ -29,9 +29,12 @@ static int lineCount = 0;
 static int cursorLine = 0;
 static int cursorCol = 0;
 static int viewportStartLine = 0;
-static int charsPerLine = 40;
+static int wrapWidthPx = 460;
+static int wrapFontKey = 0;
+static int (*glyphAdvance)(uint32_t cp) = nullptr;
+static int16_t asciiAdvance[128];  // per-font table: keeps a full re-wrap cheap per keystroke
 static int storedVisibleLines = 20;  // Updated by renderer each frame
-static bool lineBreaksDirty = true;  // Only recompute line breaks when buffer/charsPerLine changes
+static bool lineBreaksDirty = true;  // Only recompute line breaks when buffer/wrap changes
 
 // Forward declaration
 static void ensureCursorVisible(int visibleLines);
@@ -77,6 +80,18 @@ static int utf8CountChars(int start, int end) {
   return count;
 }
 
+// Pixel advance of the character at pos (len = its UTF-8 length).
+static int advanceAt(int pos, int len) {
+  const unsigned char* s = reinterpret_cast<const unsigned char*>(textBuffer) + pos;
+  if (s[0] < 0x80) return asciiAdvance[s[0]];
+  uint32_t cp = s[0];
+  if (len > 1) {
+    cp &= 0x7F >> len;
+    for (int k = 1; k < len; k++) cp = (cp << 6) | (s[k] & 0x3F);
+  }
+  return glyphAdvance ? glyphAdvance(cp) : 0;
+}
+
 // Last caret position that still belongs to this line. The next line's start is
 // never it (a caret there renders on the next line), so step back one character:
 // over the newline, over a wrap's trailing space, or before the last glyph of a
@@ -102,6 +117,7 @@ static void deleteByteRange(int start, int end) {
   memmove(textBuffer + start, textBuffer + end, textLength - end);
   textLength -= (end - start);
   cursorPosition = start;
+  selectionAnchor = -1;  // any edit ends the selection, else an empty one goes stale
   textBuffer[textLength] = '\0';
   unsavedChanges = true;
   lineBreaksDirty = true;
@@ -119,46 +135,43 @@ void editorRecalculateLines() {
     linePositions[0] = 0;
     lineCount = 1;
 
-    int col = 0;
+    int lineW = 0;
     int lastSpace = -1;
 
     for (int i = 0; i < (int)textLength && lineCount < MAX_LINES;) {
       if (textBuffer[i] == '\n') {
         // Hard line break
-        if (lineCount < MAX_LINES) {
-          linePositions[lineCount] = i + 1;
-          lineCount++;
-        }
-        col = 0;
+        linePositions[lineCount++] = i + 1;
+        lineW = 0;
         lastSpace = -1;
         i++;
         continue;
       }
 
-      int charEnd = utf8NextPos(i);
-      if (textBuffer[i] == ' ') {
-        lastSpace = i;
+      int len = utf8CharLenAt(i);
+      int w = advanceAt(i, len);
+      bool space = textBuffer[i] == ' ';
+      int lineStart = linePositions[lineCount - 1];
+      bool overflow = lineW + w > wrapWidthPx && i > lineStart;
+      if (overflow && !space) {
+        int breakPos = (lastSpace >= lineStart) ? lastSpace + 1 : i;  // after the space, else mid-word
+        linePositions[lineCount++] = breakPos;
+        lineW = 0;
+        for (int j = breakPos; j < i; j += utf8CharLenAt(j)) lineW += advanceAt(j, utf8CharLenAt(j));
+        lastSpace = -1;
+        if (lineW + w > wrapWidthPx && breakPos < i && lineCount < MAX_LINES) {  // word itself too wide
+          linePositions[lineCount++] = i;
+          lineW = 0;
+        }
       }
-
-      col++;
-      if (col >= charsPerLine) {
-        // Word wrap
-        int breakPos;
-        if (lastSpace > linePositions[lineCount - 1]) {
-          breakPos = lastSpace + 1; // Break after space
-        } else {
-          breakPos = charEnd;  // Hard break mid-word, but never inside UTF-8
-        }
-
-        if (lineCount < MAX_LINES) {
-          linePositions[lineCount] = breakPos;
-          lineCount++;
-        }
-        col = utf8CountChars(breakPos, charEnd);
+      if (space) lastSpace = i;
+      lineW += w;
+      i += len;
+      if (overflow && space) {  // an overflowing space hangs at the line end; break after it
+        linePositions[lineCount++] = i;
+        lineW = 0;
         lastSpace = -1;
       }
-
-      i = charEnd;
     }
     lineBreaksDirty = false;
   }
@@ -267,6 +280,7 @@ void editorInsertText(const char* text) {
           textLength - cursorPosition);
   memcpy(textBuffer + cursorPosition, text, insertLen);
   cursorPosition += insertLen;
+  selectionAnchor = -1;
   textLength += insertLen;
   textBuffer[textLength] = '\0';
   unsavedChanges = true;
@@ -474,16 +488,23 @@ bool editorFindNext(const char* query) {
 bool editorHasParagraphBreakPending() { return paragraphBreakPending; }
 void editorClearParagraphBreak() { paragraphBreakPending = false; }
 
-void editorSetCharsPerLine(int cpl) {
-  if (cpl != charsPerLine) {
-    charsPerLine = cpl;
+void editorSetWrap(int widthPx, int fontKey, int (*advance)(uint32_t cp)) {
+  if (widthPx != wrapWidthPx || fontKey != wrapFontKey || advance != glyphAdvance) {
+    wrapWidthPx = widthPx;
+    wrapFontKey = fontKey;
+    glyphAdvance = advance;
+    for (int c = 0; c < 128; c++) asciiAdvance[c] = (int16_t)advance(c);
     lineBreaksDirty = true;
   }
   editorRecalculateLines();
 }
 
 void editorSetVisibleLines(int n) {
-  if (n > 0) storedVisibleLines = n;
+  if (n <= 0 || n == storedVisibleLines) return;
+  storedVisibleLines = n;
+  // The count changed (font, orientation, writing/clean mode, find bar), so the
+  // viewport placed with the old count may leave the cursor off screen.
+  ensureCursorVisible(n);
 }
 
 int editorGetStoredVisibleLines() {

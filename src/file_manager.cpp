@@ -230,14 +230,21 @@ void refreshFileList() {
 int getFileCount() { return fileCount; }
 FileInfo* getFileList() { return fileList; }
 
-void loadFile(const char* filename) {
+bool loadFile(const char* filename) {
   char path[320];
   snprintf(path, sizeof(path), "/notes/%s", filename);
 
   auto file = SdMan.open(path, O_RDONLY);
   if (!file) {
     DBG_PRINTF("Could not open: %s\n", path);
-    return;
+    return false;
+  }
+  // Refuse notes the buffer can't hold: a truncated load would be saved back over the original.
+  if (file.size() > TEXT_BUFFER_SIZE - 1) {
+    DBG_PRINTF("Too large to open: %s (%u bytes)\n", path, (unsigned)file.size());
+    file.close();
+    SdMan.sleep();
+    return false;
   }
 
   char* buf = editorGetBuffer();
@@ -258,6 +265,7 @@ void loadFile(const char* filename) {
   currentState = UIState::TEXT_EDITOR;
   SdMan.sleep();
   DBG_PRINTF("Loaded: %s (%d bytes)\n", filename, (int)bytesRead);
+  return true;
 }
 
 void saveCurrentFile(bool refreshList) {
