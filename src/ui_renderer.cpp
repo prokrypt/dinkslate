@@ -418,8 +418,10 @@ static int drawEditorHeader(GfxRenderer& renderer, HalGPIO& gpio, int sw, bool t
 
 // Bottom overlay bar showing the current find query. Drawn over the editor while
 // find mode is active (the matched text itself highlights via the selection).
+static int findBarHeight(GfxRenderer& renderer) { return renderer.getLineHeight(FONT_UI) + 10; }
+
 static void drawFindBar(GfxRenderer& renderer, int sw, int sh, bool tc) {
-  int barH = renderer.getLineHeight(FONT_UI) + 10;
+  int barH = findBarHeight(renderer);
   int barY = sh - barH;
   clippedFillRect(renderer, 0, barY, sw, barH, !tc);   // clear to background
   clippedLine(renderer, 0, barY, sw, barY, tc);        // top divider
@@ -517,6 +519,9 @@ void drawTextEditor(GfxRenderer& renderer, HalGPIO& gpio) {
   int textAreaBottom = sh - 5;
   int textAreaHeight = textAreaBottom - textAreaTop;
   int visibleLines = textAreaHeight / lineHeight;
+  // The find bar covers the bottom of the text area; keep find hits above it.
+  if (editorFindMode) visibleLines -= (findBarHeight(renderer) + lineHeight - 1) / lineHeight;
+  if (visibleLines < 1) visibleLines = 1;
 
   editorSetVisibleLines(visibleLines);
 
