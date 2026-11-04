@@ -488,7 +488,11 @@ void editorSetCharsPerLine(int cpl) {
 }
 
 void editorSetVisibleLines(int n) {
-  if (n > 0) storedVisibleLines = n;
+  if (n <= 0 || n == storedVisibleLines) return;
+  storedVisibleLines = n;
+  // The count changed (font, orientation, writing/clean mode, find bar), so the
+  // viewport placed with the old count may leave the cursor off screen.
+  ensureCursorVisible(n);
 }
 
 int editorGetStoredVisibleLines() {
