@@ -1,5 +1,6 @@
 name: emu bins (scratch)
 # Scratch: builds feat/x4pro and fetches CrossDink's X4 Pro builds, then commits the
+# rebuild: run 39 (no fix) finished after run 40 and overwrote emu-out-anchor
 # binaries to the emu-out branch so a sandbox without artifact-storage access can git-fetch them.
 on:
   push:
