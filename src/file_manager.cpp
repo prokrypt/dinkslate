@@ -188,25 +188,39 @@ void refreshFileList() {
 
   for (auto file = root.openNextFile(); file; file = root.openNextFile()) {
     file.getName(name, sizeof(name));
-    if (name[0] == '.' || fileCount >= MAX_FILES) {
+    if (name[0] == '.') {
       file.close();
-      if (fileCount >= MAX_FILES) break;
       continue;
     }
 
     int nameLen = strlen(name);
     if (nameLen > 4 && strcasecmp(name + nameLen - 4, ".txt") == 0) {
-      strncpy(fileList[fileCount].filename, name, MAX_FILENAME_LEN - 1);
-      fileList[fileCount].filename[MAX_FILENAME_LEN - 1] = '\0';
-
-      filenameToTitle(name, fileList[fileCount].title, MAX_TITLE_LEN);
-
       // Pack the FAT modify date/time into a single comparable key (date is
       // the high half so it dominates the ordering).
       uint16_t d = 0, t = 0;
       file.getModifyDateTime(&d, &t);
-      fileList[fileCount].modTime = ((unsigned long)d << 16) | t;
-      fileCount++;
+      unsigned long modTime = ((unsigned long)d << 16) | t;
+
+      // List full: evict the oldest entry if this file is newer, so the newest
+      // MAX_FILES notes always show (FAT appends new files at the directory end).
+      int slot = fileCount;
+      if (fileCount >= MAX_FILES) {
+        slot = 0;
+        for (int i = 1; i < MAX_FILES; i++) {
+          if (fileList[i].modTime < fileList[slot].modTime) slot = i;
+        }
+        if (modTime <= fileList[slot].modTime) {
+          file.close();
+          continue;
+        }
+      } else {
+        fileCount++;
+      }
+
+      strncpy(fileList[slot].filename, name, MAX_FILENAME_LEN - 1);
+      fileList[slot].filename[MAX_FILENAME_LEN - 1] = '\0';
+      filenameToTitle(name, fileList[slot].title, MAX_TITLE_LEN);
+      fileList[slot].modTime = modTime;
     }
     file.close();
   }
