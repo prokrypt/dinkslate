@@ -96,15 +96,29 @@ uint8_t InputManager::getState() {
 
 void InputManager::update() {
   const unsigned long currentTime = millis();
-  const uint8_t state = getState();
+  uint8_t state = getState();
+
+#ifdef XTEINK_X4_PRO
+  // GT911 frames are already filtered. Debouncing them would drop any tap seen in only
+  // one loop pass (50 ms idle), so touch bits skip the debounce and only keys use it.
+  constexpr uint8_t TOUCH_BITS = (1 << BTN_BACK) | (1 << BTN_CONFIRM);
+  const uint8_t touch = state & TOUCH_BITS;
+  state &= ~TOUCH_BITS;
+#endif
 
   // Debounce
   if (state != lastState) {
     lastDebounceTime = currentTime;
     lastState = state;
   }
+  if ((currentTime - lastDebounceTime) <= DEBOUNCE_DELAY) {
+    state = currentState;  // keys not settled yet: keep their last debounced state
+  }
+#ifdef XTEINK_X4_PRO
+  state = (state & ~TOUCH_BITS) | touch;
+#endif
 
-  applyState((currentTime - lastDebounceTime) > DEBOUNCE_DELAY ? state : currentState);
+  applyState(state);
 }
 
 void InputManager::applyState(const uint8_t state) {
