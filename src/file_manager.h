@@ -3,7 +3,7 @@
 #include "config.h"
 
 void fileManagerSetup();
-void refreshFileList();
+void refreshFileList(const char* select = nullptr);  // select: note to highlight, else keep the current one
 // Reconcile leftover .tmp files from a crash mid-save: delete a .tmp whose real
 // file still exists (stale partial), or promote a .tmp whose real file is missing
 // (the verified new content that never got renamed in). Run once at boot.
@@ -11,7 +11,7 @@ void recoverTempFiles();
 int getFileCount();
 FileInfo* getFileList();
 
-void loadFile(const char* filename);
+bool loadFile(const char* filename);  // false if unreadable or over TEXT_BUFFER_SIZE - 1 bytes
 void saveCurrentFile(bool refreshList = true);
 void createNewFile();
 void deriveUniqueFilename(const char* title, char* out, int maxLen);

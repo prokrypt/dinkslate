@@ -6,6 +6,8 @@
 #include <esp_ota_ops.h>
 #include <esp_app_format.h>
 #include <esp_task_wdt.h>
+#include <esp_rom_crc.h>
+#include <esp_spi_flash.h>
 #include <Preferences.h>
 #include "sd_backup.h"
 
@@ -50,7 +52,6 @@ int bluetoothDeviceSelection = 0;
 int pairedKeyboardSelection = 0;
 bool pairedForgetPending = false;   // true while a "Forget keyboard?" confirmation is armed
 Orientation currentOrientation = Orientation::PORTRAIT;
-int charsPerLine = 40;
 bool screenDirty = true;
 bool btShowAllDevices = true;    // Bluetooth scan: show ALL devices by default (HID classification
                                  // is unreliable — many keyboards don't advertise HID pre-connect,
@@ -69,6 +70,7 @@ int findBufferLen = 0;
 bool darkMode = false;
 bool cleanMode = false;
 bool deleteConfirmPending = false;
+bool loadFailedNotice = false;  // browser footer: last open was refused
 WritingMode writingMode = WritingMode::NORMAL;
 FontSize fontSize = FontSize::LARGE;
 bool showWordCount = true;
@@ -108,7 +110,10 @@ static void detectOtaApps() {
         && part->subtype <= ESP_PARTITION_SUBTYPE_APP_OTA_15) {
 
       esp_app_desc_t desc;
-      if (esp_ota_get_partition_description(part, &desc) == ESP_OK) {
+      esp_ota_img_states_t state;
+      const bool rejected = esp_ota_get_state_partition(part, &state) == ESP_OK &&
+                            (state == ESP_OTA_IMG_INVALID || state == ESP_OTA_IMG_ABORTED);
+      if (!rejected && esp_ota_get_partition_description(part, &desc) == ESP_OK) {
         int slot = part->subtype - ESP_PARTITION_SUBTYPE_APP_OTA_0;
         char key[8];
         snprintf(key, sizeof(key), "ota_%d", slot);
@@ -132,6 +137,60 @@ static void detectOtaApps() {
   DBG_PRINTF("[OTA] Detected %d additional app(s)\n", otaAppCount);
 }
 
+// Point the bootloader at `dest` by writing a fresh otadata entry directly, as
+// CrossDink's ota_boot::switchTo does. esp_ota_set_boot_partition() runs
+// esp_image_verify, which rejects CrossInk/CrossDink images (they are patched so the
+// Xteink factory bootloader accepts them), so the menu entry would just reboot here.
+static bool writeOtaSelect(const esp_partition_t* dest) {
+  struct __attribute__((packed)) SelectEntry {
+    uint32_t ota_seq;
+    uint8_t seq_label[20];
+    uint32_t ota_state;
+    uint32_t crc;  // CRC32-LE of ota_seq only
+  };
+  static_assert(sizeof(SelectEntry) == 32, "otadata entry is 32 bytes");
+  const auto seqCrc = [](uint32_t seq) {
+    return esp_rom_crc32_le(UINT32_MAX, reinterpret_cast<const uint8_t*>(&seq), sizeof(seq));
+  };
+
+  const esp_partition_t* otadata =
+      esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_OTA, NULL);
+  if (!otadata || otadata->size < 2 * SPI_FLASH_SEC_SIZE) return false;
+
+  SelectEntry slots[2] = {};
+  if (esp_partition_read(otadata, 0, &slots[0], sizeof(SelectEntry)) != ESP_OK ||
+      esp_partition_read(otadata, SPI_FLASH_SEC_SIZE, &slots[1], sizeof(SelectEntry)) != ESP_OK) {
+    return false;
+  }
+  // Active entry: valid CRC, highest seq, not INVALID/ABORTED.
+  int activeIdx = -1;
+  uint32_t activeSeq = 0;
+  for (int i = 0; i < 2; ++i) {
+    if (slots[i].ota_seq == 0xFFFFFFFFu || slots[i].crc != seqCrc(slots[i].ota_seq)) continue;
+    if (slots[i].ota_state == ESP_OTA_IMG_INVALID || slots[i].ota_state == ESP_OTA_IMG_ABORTED) continue;
+    if (activeIdx < 0 || slots[i].ota_seq > activeSeq) {
+      activeIdx = i;
+      activeSeq = slots[i].ota_seq;
+    }
+  }
+
+  // The bootloader picks partition (seq - 1) % 2 (partitions.csv has ota_0 + ota_1).
+  const uint32_t destIdx = dest->subtype - ESP_PARTITION_SUBTYPE_APP_OTA_0;
+  uint32_t newSeq = activeSeq + 1;
+  while (((newSeq - 1u) % 2u) != (destIdx % 2u)) ++newSeq;
+
+  SelectEntry next = {};
+  next.ota_seq = newSeq;
+  memset(next.seq_label, 0xFF, sizeof(next.seq_label));
+  next.ota_state = ESP_OTA_IMG_NEW;
+  next.crc = seqCrc(newSeq);
+
+  // Write the other sector so the bootloader sees a higher seq there.
+  const size_t off = (activeIdx == 0 ? 1 : 0) * SPI_FLASH_SEC_SIZE;
+  return esp_partition_erase_range(otadata, off, SPI_FLASH_SEC_SIZE) == ESP_OK &&
+         esp_partition_write(otadata, off, &next, sizeof(next)) == ESP_OK;
+}
+
 // Switch to another OTA app by index into otaApps[]. Non-static so input_handler can call it.
 void switchToOtaApp(int index) {
   if (index < 0 || index >= otaAppCount) return;
@@ -144,8 +203,23 @@ void switchToOtaApp(int index) {
     return;
   }
   DBG_PRINTF("[OTA] Switching to \"%s\" (subtype %d)...\n", otaApps[index].name, subtype);
-  esp_ota_set_boot_partition(target);
+  if (!writeOtaSelect(target)) {
+    DBG_PRINTLN("[OTA] otadata write failed, staying here");
+    return;
+  }
   esp_restart();
+}
+
+// Escape hatch: hold DOWN while powering on to boot the other OTA app, before the
+// display or SD is touched, so a slot that can't draw can still be left.
+static void bootOtherAppIfRequested() {
+  for (int i = 0; i < 4; i++) {  // a few samples to get past InputManager's debounce
+    gpio.update();
+    delay(10);
+  }
+  if (!gpio.isPressed(HalGPIO::BTN_DOWN)) return;
+  detectOtaApps();
+  if (otaAppCount > 0) switchToOtaApp(0);
 }
 
 // --- Screen update ---
@@ -167,14 +241,10 @@ static void updateScreen() {
     lastOrientation = currentOrientation;
   }
 
-  // Auto-compute chars per line from font metrics so text always fills the screen
-  {
-    int sw = renderer.getScreenWidth();
-    int textAreaWidth = sw - 20;  // 10px margins each side
-    int avgCharW = renderer.getTextAdvanceX(editorFontId(fontSize), "abcdefghijklmnopqrstuvwxyz") / 26;
-    if (avgCharW > 0) charsPerLine = textAreaWidth / avgCharW;
-  }
-  editorSetCharsPerLine(charsPerLine);
+  // Wrap by real glyph widths so every line fits the 10px-margin text area. 2px slack:
+  // the line draw truncates on ink bounds, which can overhang the advance sum.
+  editorSetWrap(renderer.getScreenWidth() - 22, editorFontId(fontSize),
+                [](uint32_t cp) { return renderer.getCodepointAdvanceX(editorFontId(fontSize), cp); });
 
   switch (currentState) {
     case UIState::MAIN_MENU:         drawMainMenu(renderer, gpio); break;
@@ -196,6 +266,7 @@ void setup() {
   setCpuFrequencyMhz(80);
 
   gpio.begin();
+  bootOtherAppIfRequested();
   display.begin();
 
   renderer.setFadingFix(true);  // Power down display analog circuits after each refresh — reduces idle drain
@@ -261,7 +332,11 @@ void setup() {
   // CONFIG_PM_ENABLE and CONFIG_FREERTOS_USE_TICKLESS_IDLE are compiled into
   // ESP-IDF via sdkconfig.defaults (framework = arduino, espidf). BLE modem
   // sleep keeps the radio alive across sleep/wake cycles.
+#if CONFIG_IDF_TARGET_ESP32S3
+  esp_pm_config_esp32s3_t pm_config = {
+#else
   esp_pm_config_esp32c3_t pm_config = {
+#endif
     .max_freq_mhz = 80,
     .min_freq_mhz = 10,
     .light_sleep_enable = true
@@ -308,8 +383,9 @@ void enterDeepSleep(SleepReason reason) {
   // Render the sleep screen before entering deep sleep
   renderSleepScreen();
 
-  // Save any unsaved work
-  if (currentState == UIState::TEXT_EDITOR && editorHasUnsavedChanges()) {
+  // Save any unsaved work. No state check: the title screen (Ctrl+N) holds the
+  // editor's unsaved text too, and saveCurrentFile is a no-op without a file.
+  if (editorHasUnsavedChanges()) {
     saveCurrentFile();
   }
 
@@ -336,6 +412,11 @@ static void processPhysicalButtons() {
   bool btnRight   = gpio.isPressed(HalGPIO::BTN_RIGHT);
   bool btnConfirm = gpio.isPressed(HalGPIO::BTN_CONFIRM);
   bool btnBack    = gpio.isPressed(HalGPIO::BTN_BACK);
+#ifdef XTEINK_X4_PRO
+  // X4 Pro CONFIRM is a tap anywhere on the touch panel; while writing, a resting hand
+  // would type newlines, so the keyboard's Enter is the only Enter there.
+  if (currentState == UIState::TEXT_EDITOR) btnConfirm = false;
+#endif
 
   // Power button state machine for proper long/short press handling
   static bool powerHeld = false;
@@ -367,9 +448,7 @@ static void processPhysicalButtons() {
     if (!sleepTriggered && duration > 50 && duration < 1000) {
       // Short press - go to main menu (except when already there)
       if (currentState != UIState::MAIN_MENU) {
-        if (currentState == UIState::TEXT_EDITOR && editorHasUnsavedChanges()) {
-          saveCurrentFile();
-        }
+        if (editorHasUnsavedChanges()) saveCurrentFile();
         // Leaving the sync screen must also drop WiFi, or the radio stays on and
         // isWifiSyncActive() blocks the idle deep sleep for good.
         if (isWifiSyncActive()) wifiSyncStop();
@@ -394,9 +473,7 @@ static void processPhysicalButtons() {
     if (millis() - backPressStart > 5000) {
       restartTriggered = true;
       DBG_PRINTLN("BACK held for 5s — restarting device...");
-      if (currentState == UIState::TEXT_EDITOR && editorHasUnsavedChanges()) {
-        saveCurrentFile();
-      }
+      if (editorHasUnsavedChanges()) saveCurrentFile();
       delay(100);
       ESP.restart();
     }
@@ -481,7 +558,8 @@ static void processPhysicalButtons() {
         enqueueKeyEvent(HID_KEY_ENTER, 0, false);
       }
       if (btnBack && !btnBackLast) {
-        if (editorHasUnsavedChanges()) saveCurrentFile();
+        if (editorHasUnsavedChanges()) saveCurrentFile(false);
+        refreshFileList(editorGetCurrentFile());   // an autosave may have re-ordered the list
         currentState = UIState::FILE_BROWSER;
         screenDirty = true;
       }
@@ -668,6 +746,12 @@ void loop() {
       stopDeviceScan();
     }
   }
+  // Screen-local modes must not outlive their screen: Back / short Power leave
+  // the editor or browser without going through the key handlers that clear them.
+  if (currentState != lastState) {
+    editorFindMode = false;
+    deleteConfirmPending = false;
+  }
   lastState = currentState;
 
   // Process BLE (connection handling, scan completion detection)
@@ -691,8 +775,9 @@ void loop() {
   // Auto-save: hybrid idle + hard cap for crash protection.
   // - Saves after 10s of no keystrokes (catches natural pauses between sentences)
   // - Hard cap every 2min during continuous typing (never lose more than 2min of work)
+  // Runs on the title screen too (Ctrl+N from the editor keeps the unsaved text).
   static unsigned long lastAutoSaveMs = 0;
-  if (currentState == UIState::TEXT_EDITOR
+  if ((currentState == UIState::TEXT_EDITOR || currentState == UIState::RENAME_FILE)
       && editorHasUnsavedChanges()
       && editorGetCurrentFile()[0] != '\0') {
     unsigned long now = millis();

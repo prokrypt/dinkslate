@@ -13,6 +13,7 @@ static int fileCount = 0;
 
 // Shared state
 extern UIState currentState;
+extern int selectedFileIndex;
 
 // --- Monotonic clock for file timestamps ---------------------------------
 // The X4 has no RTC, so without this every file would get SdFat's identical
@@ -174,7 +175,11 @@ void recoverTempFiles() {
   }
 }
 
-void refreshFileList() {
+void refreshFileList(const char* select) {
+  // The list is re-sorted below, so track the note to highlight by name.
+  char keep[MAX_FILENAME_LEN] = "";
+  if (select) strncpy(keep, select, sizeof(keep) - 1);
+  else if (selectedFileIndex >= 0 && selectedFileIndex < fileCount) strcpy(keep, fileList[selectedFileIndex].filename);
   fileCount = 0;
 
   auto root = SdMan.open("/notes");
@@ -188,25 +193,39 @@ void refreshFileList() {
 
   for (auto file = root.openNextFile(); file; file = root.openNextFile()) {
     file.getName(name, sizeof(name));
-    if (name[0] == '.' || fileCount >= MAX_FILES) {
+    if (name[0] == '.') {
       file.close();
-      if (fileCount >= MAX_FILES) break;
       continue;
     }
 
     int nameLen = strlen(name);
     if (nameLen > 4 && strcasecmp(name + nameLen - 4, ".txt") == 0) {
-      strncpy(fileList[fileCount].filename, name, MAX_FILENAME_LEN - 1);
-      fileList[fileCount].filename[MAX_FILENAME_LEN - 1] = '\0';
-
-      filenameToTitle(name, fileList[fileCount].title, MAX_TITLE_LEN);
-
       // Pack the FAT modify date/time into a single comparable key (date is
       // the high half so it dominates the ordering).
       uint16_t d = 0, t = 0;
       file.getModifyDateTime(&d, &t);
-      fileList[fileCount].modTime = ((unsigned long)d << 16) | t;
-      fileCount++;
+      unsigned long modTime = ((unsigned long)d << 16) | t;
+
+      // List full: evict the oldest entry if this file is newer, so the newest
+      // MAX_FILES notes always show (FAT appends new files at the directory end).
+      int slot = fileCount;
+      if (fileCount >= MAX_FILES) {
+        slot = 0;
+        for (int i = 1; i < MAX_FILES; i++) {
+          if (fileList[i].modTime < fileList[slot].modTime) slot = i;
+        }
+        if (modTime <= fileList[slot].modTime) {
+          file.close();
+          continue;
+        }
+      } else {
+        fileCount++;
+      }
+
+      strncpy(fileList[slot].filename, name, MAX_FILENAME_LEN - 1);
+      fileList[slot].filename[MAX_FILENAME_LEN - 1] = '\0';
+      filenameToTitle(name, fileList[slot].title, MAX_TITLE_LEN);
+      fileList[slot].modTime = modTime;
     }
     file.close();
   }
@@ -224,20 +243,32 @@ void refreshFileList() {
     fileList[j + 1] = key;
   }
 
+  if (selectedFileIndex >= fileCount) selectedFileIndex = fileCount > 0 ? fileCount - 1 : 0;
+  for (int i = 0; i < fileCount; i++) {
+    if (strcmp(fileList[i].filename, keep) == 0) { selectedFileIndex = i; break; }
+  }
+
   DBG_PRINTF("File listing: %d files found\n", fileCount);
 }
 
 int getFileCount() { return fileCount; }
 FileInfo* getFileList() { return fileList; }
 
-void loadFile(const char* filename) {
+bool loadFile(const char* filename) {
   char path[320];
   snprintf(path, sizeof(path), "/notes/%s", filename);
 
   auto file = SdMan.open(path, O_RDONLY);
   if (!file) {
     DBG_PRINTF("Could not open: %s\n", path);
-    return;
+    return false;
+  }
+  // Refuse notes the buffer can't hold: a truncated load would be saved back over the original.
+  if (file.size() > TEXT_BUFFER_SIZE - 1) {
+    DBG_PRINTF("Too large to open: %s (%u bytes)\n", path, (unsigned)file.size());
+    file.close();
+    SdMan.sleep();
+    return false;
   }
 
   char* buf = editorGetBuffer();
@@ -258,6 +289,7 @@ void loadFile(const char* filename) {
   currentState = UIState::TEXT_EDITOR;
   SdMan.sleep();
   DBG_PRINTF("Loaded: %s (%d bytes)\n", filename, (int)bytesRead);
+  return true;
 }
 
 void saveCurrentFile(bool refreshList) {
@@ -298,7 +330,7 @@ void saveCurrentFile(bool refreshList) {
 
   editorSetUnsavedChanges(false);
   clockPersist();   // keep timestamps monotonic across reboots
-  if (refreshList) refreshFileList();
+  if (refreshList) refreshFileList(filename);   // the saved note is now newest (row 0)
   SdMan.sleep();
   DBG_PRINTF("Saved: %s\n", filename);
 }
@@ -313,6 +345,11 @@ void createNewFile() {
 // Rename a file on disk to match a new title, updating editor state if needed.
 void updateFileTitle(const char* filename, const char* newTitle) {
   char newFilename[MAX_FILENAME_LEN];
+  // Same name as now (FAT is case-insensitive): nothing to do. Asking
+  // deriveUniqueFilename would see this very file as a collision and rename
+  // it to a _2 suffix.
+  titleToFilename(newTitle, newFilename, MAX_FILENAME_LEN);
+  if (strcasecmp(newFilename, filename) == 0) return;
   deriveUniqueFilename(newTitle, newFilename, MAX_FILENAME_LEN);
 
   if (strcmp(newFilename, filename) != 0) {
@@ -326,7 +363,7 @@ void updateFileTitle(const char* filename, const char* newTitle) {
     }
   }
 
-  refreshFileList();
+  refreshFileList(newFilename);
   SdMan.sleep();
 }
 

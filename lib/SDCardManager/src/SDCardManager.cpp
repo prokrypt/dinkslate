@@ -10,7 +10,12 @@ SDCardManager SDCardManager::instance;
 SDCardManager::SDCardManager() : sd() {}
 
 bool SDCardManager::begin() {
+#ifdef XTEINK_X4_PRO
+  dev.end();  // no-op unless a previous mount is still up
+  if (!dev.begin() || !sd.begin(&dev)) {
+#else
   if (!sd.begin(SD_CS, SPI_FQ)) {
+#endif
     if (Serial) Serial.printf("[%lu] [SD] SD card not detected\n", millis());
     initialized = false;
   } else {
@@ -27,11 +32,13 @@ bool SDCardManager::ready() const {
 }
 
 void SDCardManager::sleep() {
+#ifndef XTEINK_X4_PRO  // SDMMC has no shared bus to release; a remount power-cycles the card (~200 ms)
   if (!initialized) return;
   // Mark as sleeping — SD card enters standby naturally when CS is deasserted.
   // Cannot call SPI.end() because the display shares the same SPI bus.
   // ensureReady() will re-init the SD card on next access.
   initialized = false;
+#endif
 }
 
 bool SDCardManager::ensureReady() {

@@ -13,6 +13,7 @@ extern bool autoReconnectEnabled;
 extern bool darkMode;
 extern bool cleanMode;
 extern bool deleteConfirmPending;
+extern bool loadFailedNotice;
 extern WritingMode writingMode;
 extern FontSize fontSize;
 extern bool showWordCount;
@@ -57,7 +58,6 @@ extern bool btShowAllDevices;
 extern int pairedKeyboardSelection;
 extern bool pairedForgetPending;
 extern Orientation currentOrientation;
-extern int charsPerLine;
 extern bool screenDirty;
 extern char renameBuffer[];
 extern int renameBufferLen;
@@ -230,7 +230,8 @@ static void handleEditorKey(uint8_t keyCode, uint8_t modifiers) {
 
   // ESC = save and return to file browser
   if (keyCode == HID_KEY_ESCAPE) {
-    if (editorHasUnsavedChanges()) saveCurrentFile();
+    if (editorHasUnsavedChanges()) saveCurrentFile(false);
+    refreshFileList(editorGetCurrentFile());   // an autosave may have re-ordered the list
     currentState = UIState::FILE_BROWSER;
     screenDirty = true;
     return;
@@ -283,6 +284,17 @@ static void openTitleEdit(const char* currentTitle, UIState returnTo) {
   screenDirty = true;
 }
 
+// A new note has no file until its title is confirmed. If the edit is cancelled
+// (Esc / Back) or confirmed empty, name it "Untitled" anyway: autosave, Ctrl+S,
+// Back and sleep all skip an unnamed note, so everything typed would be lost.
+static void ensureNewNoteHasFile() {
+  if (renameReturnState != UIState::TEXT_EDITOR || editorGetCurrentFile()[0] != '\0') return;
+  char filename[MAX_FILENAME_LEN];
+  deriveUniqueFilename(editorGetCurrentTitle(), filename, MAX_FILENAME_LEN);
+  editorSetCurrentFile(filename);
+  saveCurrentFile();  // create it now so the browser lists it, as a confirmed title does
+}
+
 // Handle title edit input
 static void handleRenameKey(uint8_t keyCode, uint8_t modifiers) {
   if (keyCode == HID_KEY_ENTER) {
@@ -306,12 +318,14 @@ static void handleRenameKey(uint8_t keyCode, uint8_t modifiers) {
         updateFileTitle(files[selectedFileIndex].filename, renameBuffer);
       }
     }
+    ensureNewNoteHasFile();
     currentState = renameReturnState;
     screenDirty = true;
     return;
   }
 
   if (keyCode == HID_KEY_ESCAPE) {
+    ensureNewNoteHasFile();
     currentState = renameReturnState;
     screenDirty = true;
     return;
@@ -371,6 +385,7 @@ static void dispatchEvent(const KeyEvent& event) {
 
     case UIState::FILE_BROWSER: {
       int fc = getFileCount();
+      if (loadFailedNotice) { loadFailedNotice = false; screenDirty = true; }
 
       // Delete confirmation pending — Enter confirms, anything else cancels
       if (deleteConfirmPending) {
@@ -394,7 +409,7 @@ static void dispatchEvent(const KeyEvent& event) {
         screenDirty = true;
       } else if (event.keyCode == HID_KEY_ENTER && fc > 0) {
         FileInfo* files = getFileList();
-        loadFile(files[selectedFileIndex].filename);
+        if (!loadFile(files[selectedFileIndex].filename)) loadFailedNotice = true;
         screenDirty = true;
       } else if (isCtrl(event.modifiers) && !isAltGr(event.modifiers) && event.keyCode == HID_KEY_N) {
         if (fc > 0) {
