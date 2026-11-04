@@ -637,7 +637,14 @@ int processAllInput() {
       repeatEvent.keyCode = 0;
     }
   }
-  if (repeatEvent.keyCode != 0 && (long)(millis() - repeatDueMs) >= 0) {
+  // Text screens only: in Settings a held Right/Left would flip Dark Mode
+  // (whole-screen inversions) or cycle orientation every frame, and in
+  // Bluetooth it restarts scans.
+  const bool repeatState = currentState == UIState::TEXT_EDITOR ||
+                           currentState == UIState::RENAME_FILE ||
+                           currentState == UIState::FILE_BROWSER;
+  if (repeatEvent.keyCode != 0 && repeatState &&
+      (long)(millis() - repeatDueMs) >= 0) {
     dispatchEvent(repeatEvent);
     processedCount++;
     repeatDueMs = millis() + 80;
