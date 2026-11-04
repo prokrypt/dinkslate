@@ -3,7 +3,7 @@
 #include "config.h"
 
 void fileManagerSetup();
-void refreshFileList();
+void refreshFileList(const char* select = nullptr);  // select: note to highlight, else keep the current one
 // Reconcile leftover .tmp files from a crash mid-save: delete a .tmp whose real
 // file still exists (stale partial), or promote a .tmp whose real file is missing
 // (the verified new content that never got renamed in). Run once at boot.
