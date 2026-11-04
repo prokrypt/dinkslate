@@ -17,6 +17,7 @@ extern bool autoReconnectEnabled;
 extern bool darkMode;
 extern bool cleanMode;
 extern bool deleteConfirmPending;
+extern bool loadFailedNotice;
 extern WritingMode writingMode;
 extern FontSize fontSize;
 extern bool showWordCount;
@@ -255,6 +256,8 @@ void drawFileBrowser(GfxRenderer& renderer, HalGPIO& gpio) {
   clippedLine(renderer, 5, sh - footerH - 2, sw - 5, sh - footerH - 2, tc);
   if (deleteConfirmPending && fc > 0) {
     drawClippedText(renderer, FONT_SMALL, 10, sh - footerH + 4, "Delete? Enter:Yes  Esc:No", 0, tc);
+  } else if (loadFailedNotice) {
+    drawClippedText(renderer, FONT_SMALL, 10, sh - footerH + 4, "Can't open note (max 16 KB)", 0, tc);
   } else {
     drawClippedText(renderer, FONT_SMALL, 10, sh - footerH + 4,
                     "Ctrl+N:Title  Ctrl+D:Delete", 0, tc);
