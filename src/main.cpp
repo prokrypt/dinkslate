@@ -28,7 +28,7 @@ enum class SleepReason {
 };
 
 // Forward declarations
-void renderSleepScreen();
+void renderSleepScreen(const char* footer = "Hold Power to wake");
 void enterDeepSleep(SleepReason reason);
 
 // External variables
@@ -691,7 +691,7 @@ void registerActivity() {
 }
 
 // Function to render the sleep screen
-void renderSleepScreen() {
+void renderSleepScreen(const char* footer) {
   renderer.clearScreen();
   
   int sw = renderer.getScreenWidth();
@@ -711,8 +711,7 @@ void renderSleepScreen() {
   int subTitleY = sh * 0.48; // 48% down the screen (moved up)
   renderer.drawText(FONT_UI, subTitleX, subTitleY, subtitle, true);
   
-  // Footer: "Hold Power to wake"
-  const char* footer = "Hold Power to wake";
+  // Footer: how to wake
   int footerWidth = renderer.getTextAdvanceX(FONT_SMALL, footer);
   int footerX = (sw - footerWidth) / 2;
   int footerY = sh * 0.75; // 75% down the screen (moved up from bottom)
@@ -725,6 +724,45 @@ void renderSleepScreen() {
   delay(500);
 }
 
+// Light sleep: the sleep screen is up but nothing is torn down (no reboot, BLE link kept),
+// so a key resumes exactly where the user was. Auto light sleep runs between passes.
+static bool lightAsleep = false;
+static unsigned long lightSleepStart = 0;
+const unsigned long LIGHT_SLEEP_MAX = 30UL * 60UL * 1000UL;  // then deep sleep
+
+void enterLightSleep() {
+  if (editorHasUnsavedChanges()) saveCurrentFile();
+  renderSleepScreen("Press a key to wake");
+  discardKeyEvents();
+  lightAsleep = true;
+  lightSleepStart = millis();
+}
+
+// Wakes on a BLE key press or on release of Up/Down/Power (so the press does nothing);
+// touch is ignored so a bag can't wake it. Power held 3s still powers off.
+static void lightSleepLoop() {
+  static bool keyDown = false;
+  static unsigned long powerStart = 0;
+  bleLoop();
+  const bool power = gpio.isPressed(HalGPIO::BTN_POWER);
+  const bool down = power || gpio.isPressed(HalGPIO::BTN_UP) || gpio.isPressed(HalGPIO::BTN_DOWN);
+  if (!power) powerStart = 0;
+  else if (!powerStart) powerStart = millis();
+  if ((powerStart && millis() - powerStart > 3000) || millis() - lightSleepStart > LIGHT_SLEEP_MAX) {
+    enterDeepSleep(powerStart ? SleepReason::POWER_LONGPRESS : SleepReason::IDLE_TIMEOUT);
+  }
+  const bool wake = discardKeyEvents() || (keyDown && !down);
+  keyDown = down;
+  if (wake) {
+    keyDown = false;
+    lightAsleep = false;
+    registerActivity();
+    screenDirty = true;
+    return;
+  }
+  gpio.waitForInput(down ? 10 : 1000);
+}
+
 void loop() {
   // Feed the hardware watchdog every iteration. If the loop ever wedges for >30s
   // this stops firing and the chip reboots cleanly instead of freezing.
@@ -732,6 +770,11 @@ void loop() {
 
   // --- GPIO first: always poll buttons before anything else ---
   gpio.update();
+
+  if (lightAsleep) {
+    lightSleepLoop();
+    return;
+  }
 
   // Control auto-reconnect based on UI state
   static UIState lastState = UIState::MAIN_MENU;
@@ -852,7 +895,8 @@ void loop() {
 
   // Check for idle timeout (skip while WiFi sync is active)
   if (!isWifiSyncActive() && millis() - lastActivityTime > IDLE_TIMEOUT) {
-    enterDeepSleep(SleepReason::IDLE_TIMEOUT);
+    enterLightSleep();
+    return;
   }
 
   // Keys, touch, BLE keystrokes and BLE screen updates all end this wait early, so the
