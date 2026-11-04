@@ -98,10 +98,6 @@ void InputManager::update() {
   const unsigned long currentTime = millis();
   uint8_t state = getState();
 
-  // Always clear events first
-  pressedEvents = 0;
-  releasedEvents = 0;
-
 #ifdef XTEINK_X4_PRO
   // GT911 frames are already filtered. Debouncing them would drop any tap seen in only
   // one loop pass (50 ms idle), so touch bits skip the debounce and only keys use it.
@@ -121,6 +117,16 @@ void InputManager::update() {
 #ifdef XTEINK_X4_PRO
   state = (state & ~TOUCH_BITS) | touch;
 #endif
+
+  applyState(state);
+}
+
+void InputManager::applyState(const uint8_t state) {
+  const unsigned long currentTime = millis();
+
+  // Always clear events first
+  pressedEvents = 0;
+  releasedEvents = 0;
 
   if (state != currentState) {
     // Calculate pressed and released events
@@ -189,10 +195,9 @@ bool InputManager::isPowerButtonPressed() const {
 namespace {
 constexpr int TOUCH_SDA = 39;
 constexpr int TOUCH_SCL = 38;
-constexpr int TOUCH_INT = 10;
+constexpr int TOUCH_INT = InputManager::TOUCH_INT_PIN;
 constexpr int TOUCH_RST = 4;
 constexpr int TOUCH_RAIL = 2;
-constexpr unsigned long TOUCH_POLL_MS = 15;
 }  // namespace
 
 void InputManager::beginTouch() {
@@ -219,6 +224,15 @@ void InputManager::beginTouch() {
       Wire.beginTransmission(addr);
       if (Wire.endTransmission() == 0) {
         touchAddr = addr;
+        // Module_Switch1 (0x804D) bits 0-1 pick the INT trigger: 0 rising, 1 falling,
+        // 2 low, 3 high. Read only: a config write needs a checksum and can break touch.
+        Wire.beginTransmission(addr);
+        Wire.write(0x80);
+        Wire.write(0x4D);
+        if (Wire.endTransmission(false) == 0 && Wire.requestFrom(addr, static_cast<uint8_t>(1)) == 1) {
+          const uint8_t trigger = Wire.read() & 0x03;
+          touchIntLevel = (trigger == 1 || trigger == 2) ? LOW : HIGH;
+        }
         return;
       }
     }
@@ -226,8 +240,7 @@ void InputManager::beginTouch() {
 }
 
 uint8_t InputManager::pollTouch() {
-  if (!touchAddr || millis() - lastTouchPoll < TOUCH_POLL_MS) return touchState;
-  lastTouchPoll = millis();
+  if (!touchAddr) return touchState;
 
   Wire.beginTransmission(touchAddr);
   Wire.write(0x81);
