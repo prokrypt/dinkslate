@@ -902,8 +902,10 @@ void loop() {
   // Keys, touch, BLE keystrokes and BLE screen updates all end this wait early, so the
   // idle timeout only bounds the loop's own timers (autosave, reconnect, idle sleep),
   // none finer than 1s. Tick fast while something here is timed: a held key (repeat,
-  // long press), a refresh in flight, or the BT / WiFi screens (scan end, sync status).
+  // long press; a held BLE key sends no further reports, so its repeat timer needs the
+  // ticks too), a refresh in flight, or the BT / WiFi screens (scan end, sync status).
   bool busy = hadActivity || screenDirty || renderer.isRefreshing() || gpio.isAnyPressed()
+              || inputRepeatArmed()
               || currentState == UIState::BLUETOOTH_SETTINGS || currentState == UIState::WIFI_SYNC
               || isWifiSyncActive();
   gpio.waitForInput(busy ? 10 : 1000);

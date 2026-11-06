@@ -653,6 +653,8 @@ static void dispatchEvent(const KeyEvent& event) {
 static KeyEvent repeatEvent = {0, 0, true};   // keyCode 0 = nothing held
 static unsigned long repeatDueMs = 0;
 
+bool inputRepeatArmed() { return repeatEvent.keyCode != 0; }
+
 static bool isRepeatable(uint8_t keyCode) {
   switch (keyCode) {
     case HID_KEY_LEFT: case HID_KEY_RIGHT: case HID_KEY_UP: case HID_KEY_DOWN:
