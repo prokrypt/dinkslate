@@ -24,7 +24,7 @@ static char currentTitle[MAX_TITLE_LEN] = "Untitled";
 static bool unsavedChanges = false;
 
 // --- Line management ---
-static int linePositions[MAX_LINES];  // Index into textBuffer for start of each line
+static uint16_t linePositions[MAX_LINES];  // Index into textBuffer for start of each line
 static int lineCount = 0;
 static int cursorLine = 0;
 static int cursorCol = 0;
