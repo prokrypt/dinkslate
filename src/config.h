@@ -85,7 +85,9 @@ extern int otaAppCount;
 static constexpr size_t TEXT_BUFFER_SIZE = 16384;
 static constexpr int MAX_FILES = 50;
 static constexpr int INPUT_QUEUE_SIZE = 50;
-static constexpr int MAX_LINES = 1024;
+// Line starts are uint16_t (TEXT_BUFFER_SIZE fits), so this costs 8 KB; every line holds
+// at least one byte, so only notes averaging under 4 bytes a line can still hit the cap.
+static constexpr int MAX_LINES = 4096;
 
 // --- Font IDs (from crosspoint-reader fontIds.h) ---
 #define FONT_BODY    (-1014561631)   // NOTOSANS_14_FONT_ID
