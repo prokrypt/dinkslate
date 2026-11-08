@@ -439,6 +439,9 @@ static void dispatchEvent(const KeyEvent& event) {
         if (fc > 0) {
           FileInfo* files = getFileList();
           openTitleEdit(files[selectedFileIndex].title, UIState::FILE_BROWSER);
+        } else {  // empty browser: "Press Ctrl+N to create one."
+          createNewFile();
+          openTitleEdit("Untitled", UIState::TEXT_EDITOR);
         }
       } else if (isCtrl(event.modifiers) && !isAltGr(event.modifiers) && event.keyCode == HID_KEY_D) {
         if (fc > 0) {
