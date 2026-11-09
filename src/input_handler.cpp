@@ -131,8 +131,11 @@ static void handleFindKey(uint8_t keyCode, uint8_t modifiers) {
     return;
   }
   if (keyCode == HID_KEY_BACKSPACE) {
+    // Remove a whole UTF-8 character: a lone lead byte never matches and makes
+    // the bar's text decoder step past the terminator.
     if (findBufferLen > 0) {
-      findBufferLen--;
+      do findBufferLen--;
+      while (findBufferLen > 0 && (static_cast<unsigned char>(findBuffer[findBufferLen]) & 0xC0) == 0x80);
       findBuffer[findBufferLen] = '\0';
     }
     screenDirty = true;
