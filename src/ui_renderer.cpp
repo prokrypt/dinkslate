@@ -573,7 +573,7 @@ void drawRenameScreen(GfxRenderer& renderer, HalGPIO& gpio) {
     renderer.fillRect(cursorX, textY, 2, lineH, tc);
 
   drawClippedText(renderer, FONT_SMALL, 20, boxY + boxH + 8,
-                  "File title input uses US QWERTY", sw - 40, tc);
+                  "File title input is ASCII only", sw - 40, tc);
 
   // Footer
   clippedLine(renderer, 5, sh - 36, sw - 5, sh - 36, tc);
@@ -995,7 +995,7 @@ void drawSyncScreen(GfxRenderer& renderer, HalGPIO& gpio) {
       if (cursorX + cursorW < sw)
         renderer.fillRect(cursorX, 66, cursorW, 20, tc);
 
-      drawClippedText(renderer, FONT_SMALL, 20, 104, "Password input uses US QWERTY", sw - 40, tc);
+      drawClippedText(renderer, FONT_SMALL, 20, 104, "Password input is ASCII only", sw - 40, tc);
       drawClippedText(renderer, FONT_SMALL, 20, 122, "Enter: Connect   Esc: Cancel", 0, tc);
       break;
     }

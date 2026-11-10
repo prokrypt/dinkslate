@@ -610,7 +610,7 @@ void syncHandleKey(uint8_t keyCode, uint8_t modifiers) {
           screenDirty = true;
         }
       } else {
-        // Printable character — Wi-Fi passwords always use US QWERTY input.
+        // Printable ASCII character in the selected layout (see hidToAscii).
         extern char hidToAscii(uint8_t hid, uint8_t modifiers);
         char c = hidToAscii(keyCode, modifiers);
         if (c != 0 && c >= ' ' && c != '\n' && c != '\t' && passwordLen < MAX_PASSWORD_LEN) {

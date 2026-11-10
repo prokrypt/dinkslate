@@ -111,8 +111,15 @@ bool discardKeyEvents() {
   return pressed;
 }
 
+// ASCII-only fields (title, Wi-Fi password). Use the selected layout so QWERTZ
+// keycaps type what they show (Z/Y, "-", AltGr+Q = "@"); a non-ASCII letter (RU)
+// falls back to the Latin letter on that key, anything else non-ASCII is dropped.
 char hidToAscii(uint8_t hid, uint8_t modifiers) {
-  const char* text = keyboardLayoutQwertyText(hid, modifiers, capsLockOn);
+  const char* text = keyboardLayoutText(currentKeyboardLayout, hid, modifiers, capsLockOn);
+  if (text && static_cast<unsigned char>(text[0]) >= 0x80) {
+    text = isAltGr(modifiers) ? nullptr : keyboardLayoutQwertyText(hid, modifiers, capsLockOn);
+    if (text && !isalpha(static_cast<unsigned char>(text[0]))) text = nullptr;
+  }
   if (!text || text[0] == '\0' || text[1] != '\0') return 0;
   return text[0];
 }
