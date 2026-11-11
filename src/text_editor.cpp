@@ -472,7 +472,7 @@ bool editorFindNext(const char* query) {
     if (memcmp(textBuffer + i, query, qlen) == 0) { match = i; break; }
   }
   if (match < 0) {
-    for (int i = 0; i + qlen <= from && i + qlen <= (int)textLength; i++) {
+    for (int i = 0; i < from && i + qlen <= (int)textLength; i++) {  // incl. matches straddling the caret
       if (memcmp(textBuffer + i, query, qlen) == 0) { match = i; break; }
     }
   }
