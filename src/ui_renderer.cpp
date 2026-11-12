@@ -475,7 +475,9 @@ void drawTextEditor(GfxRenderer& renderer, HalGPIO& gpio) {
     // Pre-compute page info for the header
     // Use a temporary linesPerPage estimate (will be exact since header height is fixed)
     int tempTextTop = cleanMode ? 8 : 38;
-    int tempLinesPerPage = (sh - 5 - tempTextTop) / lineHeight;
+    // The find bar covers the bottom of the page; keep find hits above it.
+    int findBarLines = editorFindMode ? (findBarHeight(renderer) + lineHeight - 1) / lineHeight : 0;
+    int tempLinesPerPage = (sh - 5 - tempTextTop) / lineHeight - findBarLines;
     if (tempLinesPerPage < 1) tempLinesPerPage = 1;
     int currentPage = curLine / tempLinesPerPage;
     int totalPages = (totalLines + tempLinesPerPage - 1) / tempLinesPerPage;
@@ -487,7 +489,7 @@ void drawTextEditor(GfxRenderer& renderer, HalGPIO& gpio) {
 
     int textAreaBottom = sh - 5;
     int textAreaHeight = textAreaBottom - textAreaTop;
-    int linesPerPage = textAreaHeight / lineHeight;
+    int linesPerPage = textAreaHeight / lineHeight - findBarLines;
     if (linesPerPage < 1) linesPerPage = 1;
 
     // Recompute with actual linesPerPage if it differs
