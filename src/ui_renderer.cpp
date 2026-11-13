@@ -11,6 +11,7 @@
 #include <HalDisplay.h>
 #include <EpdFont.h>
 #include <EpdFontFamily.h>
+#include <algorithm>
 
 // External variables
 extern bool autoReconnectEnabled;
@@ -388,7 +389,7 @@ static int drawEditorHeader(GfxRenderer& renderer, HalGPIO& gpio, int sw, bool t
   }
 
   // Word count — drawn to the left of the layout indicator (or mode indicator)
-  int titleMaxW = layoutIndX - 20;  // title starts at x=10; keep a 10px gap
+  int rightX = layoutIndX;  // left edge of the right-anchored indicators
   if (showWordCount) {
     int wc = editorGetWordCount();
     char wcBuf[24];
@@ -398,18 +399,22 @@ static int drawEditorHeader(GfxRenderer& renderer, HalGPIO& gpio, int sw, bool t
     int wcX = layoutIndX - 8 - wcW;
     if (wcX > 10) {
       drawClippedText(renderer, FONT_SMALL, wcX, 5, wcBuf, wcW + 5, tc);
-      titleMaxW = wcX - 20;
+      rightX = wcX;
     }
   }
 
-  // Title — stops before word count (or mode indicator if word count hidden)
-  drawClippedText(renderer, FONT_SMALL, 10, 5, headerBuf, titleMaxW, tc, EpdFontFamily::BOLD);
-
-  // Centered text (e.g. page indicator)
+  // Centered text (e.g. page indicator) — shifted left if it would run into the indicators
   if (centerText) {
     int ctW = renderer.getTextAdvanceX(FONT_SMALL, centerText);
-    drawClippedText(renderer, FONT_SMALL, (sw - ctW) / 2, 5, centerText, ctW + 5, tc);
+    int ctX = std::min((sw - ctW) / 2, rightX - 8 - ctW);
+    if (ctX > 10) {
+      drawClippedText(renderer, FONT_SMALL, ctX, 5, centerText, ctW + 5, tc);
+      rightX = ctX;
+    }
   }
+
+  // Title — stops before the leftmost indicator (title starts at x=10; keep a 10px gap)
+  drawClippedText(renderer, FONT_SMALL, 10, 5, headerBuf, rightX - 20, tc, EpdFontFamily::BOLD);
 
   drawBattery(renderer, gpio);
   clippedLine(renderer, 5, 32, sw - 5, 32, tc);
