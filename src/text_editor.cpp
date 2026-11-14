@@ -227,7 +227,19 @@ void editorClear() {
 }
 
 void editorLoadBuffer(size_t length) {
-  textLength = length;
+  // Notes made on a PC: drop a UTF-8 BOM (drew as a missing-glyph box) and fold CRLF /
+  // lone CR into LF (a CR is an invisible extra caret stop at every line end).
+  size_t r = (length >= 3 && memcmp(textBuffer, "\xEF\xBB\xBF", 3) == 0) ? 3 : 0;
+  size_t w = 0;
+  for (; r < length; r++) {
+    char c = textBuffer[r];
+    if (c == '\r') {
+      if (r + 1 < length && textBuffer[r + 1] == '\n') continue;
+      c = '\n';
+    }
+    textBuffer[w++] = c;
+  }
+  textLength = w;
   textBuffer[textLength] = '\0';
   cursorPosition = (int)textLength;  // Start at end
   selectionAnchor = -1;
@@ -494,6 +506,7 @@ void editorSetWrap(int widthPx, int fontKey, int (*advance)(uint32_t cp)) {
     wrapFontKey = fontKey;
     glyphAdvance = advance;
     for (int c = 0; c < 128; c++) asciiAdvance[c] = (int16_t)advance(c);
+    asciiAdvance['\t'] = asciiAdvance[' '];  // tabs (PC-made notes) draw as a blank, see ui_renderer
     lineBreaksDirty = true;
   }
   editorRecalculateLines();
