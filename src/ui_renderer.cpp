@@ -272,6 +272,12 @@ void drawFileBrowser(GfxRenderer& renderer, HalGPIO& gpio) {
   renderer.beginRefresh(HalDisplay::FAST_REFRESH);
 }
 
+// The fonts have no tab glyph and the keyboard can't type one, but notes made on a PC
+// have them: show a blank instead of the missing-glyph box. The note's bytes are kept.
+static void blankTabs(char* s) {
+  for (; *s; s++) if (*s == '\t') *s = ' ';
+}
+
 // Helper: draw a single editor line from the buffer
 static void drawEditorLine(GfxRenderer& renderer, int lineIdx, int x, int yPos,
                            int lineHeight, int maxW, bool tc) {
@@ -291,6 +297,7 @@ static void drawEditorLine(GfxRenderer& renderer, int lineIdx, int x, int yPos,
   int copyLen = (len < (int)sizeof(lineBuf) - 1) ? len : (int)sizeof(lineBuf) - 1;
   strncpy(lineBuf, buf + lineStart, copyLen);
   lineBuf[copyLen] = '\0';
+  blankTabs(lineBuf);
 
   int fontId = editorFontId(fontSize);
 
@@ -338,6 +345,7 @@ static void drawEditorCursor(GfxRenderer& renderer, int cursorY, int lineHeight,
   }
   strncpy(prefix, buf + lineStart, prefixLen);
   prefix[prefixLen] = '\0';
+  blankTabs(prefix);
 
   int cursorX = 10 + renderer.getTextAdvanceX(editorFontId(fontSize), prefix);
   int cursorW = renderer.getSpaceWidth(editorFontId(fontSize));
