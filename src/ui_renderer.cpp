@@ -155,6 +155,13 @@ static void clippedFillRect(GfxRenderer& r, int x, int y, int w, int h,
   if (w > 0 && h > 0) r.fillRect(x, y, w, h, state);
 }
 
+// Selection bar for a FONT_UI row drawn at yPos. drawText's y is the top of the line box and
+// the ink sits low in it (rows y+8..y+32, accents from y+3), so center the bar on the ink:
+// a bar placed around yPos itself cuts off the bottom of the selected (inverse) text.
+static void fillRowBar(GfxRenderer& r, int yPos, int h, bool color) {
+  clippedFillRect(r, 5, yPos + 20 - h / 2, r.getScreenWidth() - 10, h, color);
+}
+
 // ---------------------------------------------------------------------------
 // Helper: draw battery percentage in top-right
 // ---------------------------------------------------------------------------
@@ -199,7 +206,7 @@ void drawMainMenu(GfxRenderer& renderer, HalGPIO& gpio) {
     int yPos = 90 + (i * 45);
     const char* label = (i < 4) ? baseMenuItems[i] : otaApps[i - 4].name;
     if (i == mainMenuSelection) {
-      clippedFillRect(renderer, 5, yPos - 5, sw - 10, 35, tc);
+      fillRowBar(renderer, yPos, 35, tc);
       drawClippedText(renderer, FONT_UI, 20, yPos, label, sw - 40, !tc);
     } else {
       drawClippedText(renderer, FONT_UI, 20, yPos, label, sw - 40, tc);
@@ -210,7 +217,7 @@ void drawMainMenu(GfxRenderer& renderer, HalGPIO& gpio) {
   constexpr int bm = 60;
   if (sh > bm + 40) {
     clippedLine(renderer, 10, sh - bm, sw - 10, sh - bm, tc);
-    drawClippedText(renderer, FONT_SMALL, 20, sh - bm + 12, "Arrows: Navigate  Enter: Select", 0, tc);
+    drawClippedText(renderer, FONT_SMALL, 20, sh - bm + 6, "Arrows: Navigate  Enter: Select", 0, tc);
     drawBleStatus(renderer, 20, sh - bm + 28);
   }
   drawBattery(renderer, gpio);
@@ -243,7 +250,7 @@ void drawFileBrowser(GfxRenderer& renderer, HalGPIO& gpio) {
 
   if (fc == 0) {
     drawClippedText(renderer, FONT_UI, 20, listTop + 14, "No notes yet.", 0, tc);
-    drawClippedText(renderer, FONT_SMALL, 20, listTop + 36, "Press Ctrl+N to create one.", 0, tc);
+    drawClippedText(renderer, FONT_SMALL, 20, listTop + 48, "Press Ctrl+N to create one.", 0, tc);
   }
 
   FileInfo* files = getFileList();
@@ -251,7 +258,7 @@ void drawFileBrowser(GfxRenderer& renderer, HalGPIO& gpio) {
     int yPos = listTop + (i - startIdx) * lineH;
 
     if (i == selectedFileIndex) {
-      clippedFillRect(renderer, 5, yPos - 3, sw - 10, lineH - 1, tc);
+      fillRowBar(renderer, yPos, lineH, tc);
       drawClippedText(renderer, FONT_UI, 15, yPos, files[i].title, sw - 30, !tc);
     } else {
       drawClippedText(renderer, FONT_UI, 15, yPos, files[i].title, sw - 30, tc);
@@ -627,7 +634,7 @@ void drawSettingsMenu(GfxRenderer& renderer, HalGPIO& gpio) {
     bool sel = (i == settingsSelection);
 
     if (sel) {
-      clippedFillRect(renderer, 5, yPos - 5, sw - 10, lineH - 6, !darkMode);
+      fillRowBar(renderer, yPos, lineH - 4, !darkMode);
       drawClippedText(renderer, FONT_UI, 15, yPos, labels[i], sw / 2 - 15, darkMode);
     } else {
       drawClippedText(renderer, FONT_UI, 15, yPos, labels[i], sw / 2 - 15, !darkMode);
@@ -788,7 +795,7 @@ void drawBluetoothSettings(GfxRenderer& renderer, HalGPIO& gpio) {
                                   : devices[d].name.c_str();
         int nameMaxW = sw - 100;   // leave room for RSSI
         if (isSel || isConnected) {
-          clippedFillRect(renderer, 5, yPos - 5, sw - 10, 25, tc);
+          fillRowBar(renderer, yPos, 30, tc);
           drawClippedText(renderer, FONT_UI, 15, yPos, displayName, nameMaxW, !tc);
         } else {
           drawClippedText(renderer, FONT_UI, 15, yPos, displayName, nameMaxW, tc);
@@ -804,7 +811,7 @@ void drawBluetoothSettings(GfxRenderer& renderer, HalGPIO& gpio) {
         else
           snprintf(toggleStr, sizeof(toggleStr), "Show other devices (%d)", total - kbd);
         if (isSel) {
-          clippedFillRect(renderer, 5, yPos - 5, sw - 10, 25, tc);
+          fillRowBar(renderer, yPos, 30, tc);
           drawClippedText(renderer, FONT_UI, 15, yPos, toggleStr, sw - 30, !tc);
         } else {
           drawClippedText(renderer, FONT_UI, 15, yPos, toggleStr, sw - 30, tc);
@@ -824,7 +831,7 @@ void drawBluetoothSettings(GfxRenderer& renderer, HalGPIO& gpio) {
     }
   } else {
     drawClippedText(renderer, FONT_UI, 20, 80, "No devices found", 0, tc);
-    drawClippedText(renderer, FONT_SMALL, 20, 100, "Press Enter to scan for devices", 0, tc);
+    drawClippedText(renderer, FONT_SMALL, 20, 114, "Press Enter to scan for devices", 0, tc);
   }
 
   // Footer
@@ -853,7 +860,7 @@ void drawPairedKeyboardsMenu(GfxRenderer& renderer, HalGPIO& gpio) {
   int count = getPairedKeyboardCount();
   if (count == 0) {
     drawClippedText(renderer, FONT_UI, 20, 60, "No paired keyboards", 0, tc);
-    drawClippedText(renderer, FONT_SMALL, 20, 85, "Go to Bluetooth to scan and connect", 0, tc);
+    drawClippedText(renderer, FONT_SMALL, 20, 94, "Go to Bluetooth to scan and connect", 0, tc);
   } else {
     std::string currentAddr = getCurrentDeviceAddress();
     int lineH = 38;
@@ -868,7 +875,7 @@ void drawPairedKeyboardsMenu(GfxRenderer& renderer, HalGPIO& gpio) {
       bool active = (!currentAddr.empty() && currentAddr == addr);
 
       if (sel) {
-        clippedFillRect(renderer, 5, yPos - 4, sw - 10, lineH - 4, tc);
+        fillRowBar(renderer, yPos, lineH - 4, tc);
         drawClippedText(renderer, FONT_UI, 15, yPos, name.c_str(), sw - 90, !tc);
       } else {
         drawClippedText(renderer, FONT_UI, 15, yPos, name.c_str(), sw - 90, tc);
@@ -969,12 +976,12 @@ void drawSyncScreen(GfxRenderer& renderer, HalGPIO& gpio) {
                    getNetworkSSID(i));
 
           if (isSel) {
-            clippedFillRect(renderer, 5, yPos - 3, sw - 10, lineH - 2, tc);
+            fillRowBar(renderer, yPos, lineH, tc);
             drawClippedText(renderer, FONT_UI, 15, yPos, label, sw - 50, !tc);
-            drawSignalBars(renderer, sw - 30, yPos, getNetworkRSSI(i), !tc);
+            drawSignalBars(renderer, sw - 30, yPos + 14, getNetworkRSSI(i), !tc);
           } else {
             drawClippedText(renderer, FONT_UI, 15, yPos, label, sw - 50, tc);
-            drawSignalBars(renderer, sw - 30, yPos, getNetworkRSSI(i), tc);
+            drawSignalBars(renderer, sw - 30, yPos + 14, getNetworkRSSI(i), tc);
           }
         }
       }
