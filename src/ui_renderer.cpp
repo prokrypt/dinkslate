@@ -354,12 +354,28 @@ static void drawEditorCursor(GfxRenderer& renderer, int cursorY, int lineHeight,
   prefix[prefixLen] = '\0';
   blankTabs(prefix);
 
-  int cursorX = 10 + renderer.getTextAdvanceX(editorFontId(fontSize), prefix);
-  int cursorW = renderer.getSpaceWidth(editorFontId(fontSize));
+  int fontId = editorFontId(fontSize);
+  int cursorX = 10 + renderer.getTextAdvanceX(fontId, prefix);
+  int cursorW = renderer.getSpaceWidth(fontId);
   if (cursorW < 2) cursorW = 8;
+
+  // Character under the caret (one UTF-8 sequence), redrawn in inverse video on the block.
+  int lineEnd = (curLine + 1 < editorGetLineCount()) ? editorGetLinePosition(curLine + 1) : (int)editorGetLength();
+  int at = lineStart + prefixLen;
+  char glyph[5] = "";
+  if (at < lineEnd && buf[at] != '\n') {
+    int n = 1;
+    while (n < 4 && at + n < lineEnd && (static_cast<unsigned char>(buf[at + n]) & 0xC0) == 0x80) n++;
+    memcpy(glyph, buf + at, n);
+    glyph[n] = '\0';
+    blankTabs(glyph);
+    int w = renderer.getTextAdvanceX(fontId, glyph);
+    if (w > cursorW) cursorW = w;
+  }
 
   if (cursorX >= 0 && cursorX + cursorW <= sw && cursorY >= 0 && cursorY + lineHeight <= renderer.getScreenHeight()) {
     renderer.fillRect(cursorX, cursorY, cursorW, lineHeight, tc);
+    if (glyph[0]) drawClippedText(renderer, fontId, cursorX, cursorY, glyph, 0, !tc);
   }
 }
 
