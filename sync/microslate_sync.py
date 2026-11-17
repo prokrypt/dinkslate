@@ -79,9 +79,10 @@ def download_file(name):
     r = requests.get(f"{DEVICE_URL}/notes/{name}", timeout=10)
     r.raise_for_status()
     path = os.path.join(LOCAL_DIR, name)
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        f.write(r.text)
-    log.info("  Downloaded: %s (%d bytes)", name, len(r.text))
+    # Raw bytes: the device sends no charset, so r.text would decode UTF-8 as Latin-1.
+    with open(path, "wb") as f:
+        f.write(r.content)
+    log.info("  Downloaded: %s (%d bytes)", name, len(r.content))
 
 
 def get_local_files():
