@@ -17,6 +17,7 @@ import time
 import logging
 import subprocess
 import requests
+from urllib.parse import quote
 
 # --- Configuration ---
 DEVICE_URL = "http://microslate.local"
@@ -76,7 +77,7 @@ def get_device_files():
 
 def download_file(name):
     """Download a file from the device to the local folder."""
-    r = requests.get(f"{DEVICE_URL}/notes/{name}", timeout=10)
+    r = requests.get(f"{DEVICE_URL}/notes/{quote(name)}", timeout=10)
     r.raise_for_status()
     path = os.path.join(LOCAL_DIR, name)
     # Raw bytes: the device sends no charset, so r.text would decode UTF-8 as Latin-1.
