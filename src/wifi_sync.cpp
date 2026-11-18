@@ -457,7 +457,7 @@ static void handleFileList() {
     if (name[0] == '.') { file.close(); continue; }
 
     int nameLen = strlen(name);
-    if (nameLen > 4 && strcmp(name + nameLen - 4, ".txt") == 0) {
+    if (nameLen > 4 && strcasecmp(name + nameLen - 4, ".txt") == 0) {
       if (!first) json += ",";
       first = false;
       json += "{\"name\":\"";
@@ -483,7 +483,10 @@ static void handleFileDownload() {
     return;
   }
 
+  // The URI is still percent-encoded ("New%20Text%20Document.txt"); in a path '+' is a literal plus.
   String filename = uri.substring(7);
+  filename.replace("+", "%2B");
+  filename = WebServer::urlDecode(filename);
   char path[320];
   snprintf(path, sizeof(path), "/notes/%s", filename.c_str());
 
