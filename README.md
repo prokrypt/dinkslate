@@ -203,20 +203,14 @@ Back up all notes from the device to your PC over WiFi. The device and PC must b
    ```bash
    pip install requests
    ```
-3. Run the installer for your platform:
+3. **Windows:** double-click **`sync\install_sync.bat`**. The script starts immediately and runs silently in the background on every login. To stop auto-start later, double-click **`sync\uninstall_sync.bat`**.
 
-**Windows** — double-click **`sync\install_sync.bat`**
+   **macOS / Linux:** there is no installer; run the script in a terminal (or add it to your login items / a systemd user service yourself):
+   ```bash
+   python3 sync/microslate_sync.py
+   ```
 
-**macOS / Linux** — run in a terminal:
-```bash
-chmod +x sync/install_sync.sh && sync/install_sync.sh
-```
-
-That's it. The script starts immediately and will run silently in the background on every login. When a sync completes, a desktop notification lists the files that were downloaded (Windows balloon, macOS notification, or Linux `notify-send`). Notes are saved to `Documents/MicroSlate Notes/` by default (edit `LOCAL_DIR` in `microslate_sync.py` to change).
-
-To stop auto-start later:
-- **Windows** — double-click **`sync\uninstall_sync.bat`**
-- **macOS / Linux** — run `sync/uninstall_sync.sh`
+Notes are saved to `~/OneDrive/Documents/MicroSlate Notes/` by default (edit `LOCAL_DIR` in `microslate_sync.py` to change). On Windows a balloon notification reports each sync; on macOS / Linux the result is only logged (console and `microslate_sync.log` in the notes folder).
 
 #### Syncing
 
@@ -224,7 +218,7 @@ To stop auto-start later:
 2. **First time:** pick your WiFi network and enter the password. The device asks to save credentials.
 3. **After that:** the device auto-connects — just press Sync and wait
 4. The device syncs automatically once connected — a progress log is shown on screen
-5. When done, the device shows a summary and turns WiFi off automatically. A desktop notification lists the downloaded files
+5. When done, the device shows a summary and turns WiFi off automatically. On Windows a notification says how many files were downloaded
 
 If the sync script isn't running, you can start it manually:
 ```bash
@@ -270,9 +264,7 @@ xteink-writer-firmware/
 ├── sync/
 │   ├── microslate_sync.py   — PC sync script (Python, cross-platform)
 │   ├── install_sync.bat     — register auto-start on Windows login
-│   ├── uninstall_sync.bat   — remove auto-start on Windows
-│   ├── install_sync.sh      — register auto-start on macOS / Linux
-│   └── uninstall_sync.sh    — remove auto-start on macOS / Linux
+│   └── uninstall_sync.bat   — remove auto-start on Windows
 ├── lib/                  — all hardware/display libraries (bundled)
 │   ├── GfxRenderer/
 │   ├── EpdFont/
