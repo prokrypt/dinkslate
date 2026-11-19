@@ -43,6 +43,8 @@ log = logging.getLogger("sync")
 
 def notify(title, message):
     """Show a Windows balloon notification (no dependencies required)."""
+    if os.name != "nt":
+        return  # Windows only; elsewhere the log line is the report
     try:
         script = (
             "Add-Type -AssemblyName System.Windows.Forms;"
