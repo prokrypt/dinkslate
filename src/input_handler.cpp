@@ -357,8 +357,9 @@ static void handleRenameKey(uint8_t keyCode, uint8_t modifiers) {
   }
 
   if (keyCode == HID_KEY_BACKSPACE) {
-    if (renameBufferLen > 0) {
-      renameBufferLen--;
+    if (renameBufferLen > 0) {  // whole UTF-8 character (PC-made titles), as in the find bar
+      do renameBufferLen--;
+      while (renameBufferLen > 0 && (static_cast<unsigned char>(renameBuffer[renameBufferLen]) & 0xC0) == 0x80);
       renameBuffer[renameBufferLen] = '\0';
       screenDirty = true;
     }

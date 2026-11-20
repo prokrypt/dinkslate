@@ -350,6 +350,11 @@ void updateFileTitle(const char* filename, const char* newTitle) {
   // it to a _2 suffix.
   titleToFilename(newTitle, newFilename, MAX_FILENAME_LEN);
   if (strcasecmp(newFilename, filename) == 0) return;
+  // Title confirmed unchanged: keep the name. A PC-made name ("Grüße.txt",
+  // "v1.2 plan.txt") does not survive the title -> filename mapping.
+  char shownTitle[MAX_TITLE_LEN];
+  filenameToTitle(filename, shownTitle, MAX_TITLE_LEN);
+  if (strcmp(shownTitle, newTitle) == 0) return;
   deriveUniqueFilename(newTitle, newFilename, MAX_FILENAME_LEN);
 
   if (strcmp(newFilename, filename) != 0) {
