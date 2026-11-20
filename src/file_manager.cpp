@@ -57,7 +57,10 @@ static void clockPersist() {
 static void filenameToTitle(const char* filename, char* out, int maxLen) {
   int j = 0;
   bool capitalizeNext = true;
-  for (int i = 0; filename[i] != '\0' && filename[i] != '.' && j < maxLen - 1; i++) {
+  const char* ext = strrchr(filename, '.');   // last dot only: "v1.2 plan.txt" -> "V1.2 Plan"
+  int end = ext ? (int)(ext - filename) : (int)strlen(filename);
+  int i = 0;
+  for (; i < end && j < maxLen - 1; i++) {
     char c = filename[i];
     if (c == '_') {
       if (j > 0) out[j++] = ' ';
@@ -68,19 +71,23 @@ static void filenameToTitle(const char* filename, char* out, int maxLen) {
       out[j++] = c;
     }
   }
+  if (i < end && (filename[i] & 0xC0) == 0x80) {   // cut inside a UTF-8 letter: drop its lead bytes too
+    while (j > 0 && (out[j - 1] & 0xC0) == 0x80) j--;
+    if (j > 0) j--;
+  }
   out[j] = '\0';
   if (j == 0) strncpy(out, "Untitled", maxLen - 1);
 }
 
 // Convert a title to a valid FAT filename (lowercase, spaces->underscores,
-// non-alphanumeric stripped, ".txt" appended).
+// other ASCII punctuation stripped, UTF-8 kept, ".txt" appended).
 static void titleToFilename(const char* title, char* out, int maxLen) {
   int maxBase = maxLen - 5; // room for ".txt" + null
   int j = 0;
   for (int i = 0; title[i] != '\0' && j < maxBase; i++) {
     char c = title[i];
     if (c >= 'A' && c <= 'Z') c += 32;
-    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (c & 0x80)) {   // keep UTF-8 (PC-made titles)
       out[j++] = c;
     } else if (c == ' ' || c == '_' || c == '-') {
       if (j > 0 && out[j - 1] != '_') out[j++] = '_';
