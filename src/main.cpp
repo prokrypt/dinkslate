@@ -893,8 +893,16 @@ void loop() {
     sdWriteFile("/microslate/ui_prefs.json", uiBuf);
   }
 
-  // Check for idle timeout (skip while WiFi sync is active)
-  if (!isWifiSyncActive() && millis() - lastActivityTime > IDLE_TIMEOUT) {
+  // Check for idle timeout. A sync that is working (scan, connect, transfer, summary) holds
+  // the device awake and ends by its own timeouts. A sync screen left waiting on the user
+  // (network list, password, failed, save/forget prompt) has none: stop it, or WiFi stays
+  // on and the device never sleeps.
+  const SyncState ss = getSyncState();
+  const bool syncWorking = isWifiSyncActive() &&
+                           (ss == SyncState::SCANNING || ss == SyncState::CONNECTING ||
+                            ss == SyncState::SYNCING || ss == SyncState::DONE);
+  if (!syncWorking && millis() - lastActivityTime > IDLE_TIMEOUT) {
+    if (isWifiSyncActive()) wifiSyncStop();
     enterLightSleep();
     return;
   }
