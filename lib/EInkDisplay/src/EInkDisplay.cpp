@@ -435,6 +435,10 @@ void EInkDisplay::cleanupGrayscaleBuffers(const uint8_t* bwBuffer) {
 #endif
 
 void EInkDisplay::displayBuffer(RefreshMode mode, const bool turnOffScreen) {
+  // A beginRefresh() may still be in flight (sleep screen right after a redraw). The
+  // controller ignores commands while busy, so let it finish first, or this frame is
+  // lost and the old-frame plane goes stale (leftovers of both screens stay visible).
+  while (!pollRefresh()) delay(1);  // pollRefresh has the 10 s timeout
 #ifdef XTEINK_X4_PRO
   if (uc8179) {
     ucStartRefresh(mode, turnOffScreen);
