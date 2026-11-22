@@ -72,3 +72,4 @@ const char* editorGetCurrentTitle();
 bool editorHasUnsavedChanges();
 void editorSetUnsavedChanges(bool v);
 int editorGetWordCount();
+bool editorIsFull();  // the last typed/pasted text did not fit (TEXT_BUFFER_SIZE)

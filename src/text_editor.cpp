@@ -22,6 +22,7 @@ static bool paragraphBreakPending = false;
 static char currentFile[MAX_FILENAME_LEN] = "";
 static char currentTitle[MAX_TITLE_LEN] = "Untitled";
 static bool unsavedChanges = false;
+static bool noteFull = false;  // last insert did not fit; cleared by any edit or load
 
 // --- Line management ---
 static uint16_t linePositions[MAX_LINES];  // Index into textBuffer for start of each line
@@ -120,6 +121,7 @@ static void deleteByteRange(int start, int end) {
   selectionAnchor = -1;  // any edit ends the selection, else an empty one goes stale
   textBuffer[textLength] = '\0';
   unsavedChanges = true;
+  noteFull = false;
   lineBreaksDirty = true;
 
   editorRecalculateLines();
@@ -210,6 +212,7 @@ void editorInit() {
   currentFile[0] = '\0';
   strncpy(currentTitle, "Untitled", MAX_TITLE_LEN - 1);
   unsavedChanges = false;
+  noteFull = false;
   viewportStartLine = 0;
   lineBreaksDirty = true;
   editorRecalculateLines();
@@ -221,6 +224,7 @@ void editorClear() {
   cursorPosition = 0;
   selectionAnchor = -1;
   unsavedChanges = false;
+  noteFull = false;
   viewportStartLine = 0;
   lineBreaksDirty = true;
   editorRecalculateLines();
@@ -243,6 +247,7 @@ void editorLoadBuffer(size_t length) {
   textBuffer[textLength] = '\0';
   cursorPosition = (int)textLength;  // Start at end
   selectionAnchor = -1;
+  noteFull = false;
   viewportStartLine = 0;
   lineBreaksDirty = true;
   editorRecalculateLines();
@@ -275,16 +280,16 @@ void editorInsertChar(char c) {
 
 void editorInsertText(const char* text) {
   if (!text || text[0] == '\0') return;
-  if (strchr(text, '\n')) paragraphBreakPending = true;  // flag paragraph breaks for autosave
-  // Typing over a selection replaces it.
-  if (editorHasSelection()) {
-    int lo, hi;
-    editorGetSelectionRange(&lo, &hi);
-    selectionAnchor = -1;
-    deleteByteRange(lo, hi);  // cursor now at lo
-  }
+  // Typing over a selection replaces it; check the fit first so a refused insert keeps it.
+  int lo, hi;
+  const bool sel = editorGetSelectionRange(&lo, &hi);
   size_t insertLen = strlen(text);
-  if (textLength + insertLen >= TEXT_BUFFER_SIZE) return;
+  if (textLength - (sel ? hi - lo : 0) + insertLen >= TEXT_BUFFER_SIZE) {
+    noteFull = true;
+    return;
+  }
+  if (sel) deleteByteRange(lo, hi);  // cursor now at lo
+  if (strchr(text, '\n')) paragraphBreakPending = true;  // flag paragraph breaks for autosave
 
   // Shift text right
   memmove(textBuffer + cursorPosition + insertLen,
@@ -296,6 +301,7 @@ void editorInsertText(const char* text) {
   textLength += insertLen;
   textBuffer[textLength] = '\0';
   unsavedChanges = true;
+  noteFull = false;
   lineBreaksDirty = true;
 
   editorRecalculateLines();
@@ -462,13 +468,7 @@ void editorCut() {
 
 void editorPaste() {
   if (clipboardLen == 0) return;
-  // Replace an active selection, then insert the clipboard at the caret.
-  int lo, hi;
-  if (editorGetSelectionRange(&lo, &hi)) {
-    selectionAnchor = -1;
-    deleteByteRange(lo, hi);
-  }
-  editorInsertText(clipboard);  // bounds-checked; no-op if it would overflow
+  editorInsertText(clipboard);  // replaces a selection; nothing changes if it would not fit
 }
 
 bool editorFindNext(const char* query) {
@@ -553,3 +553,4 @@ const char* editorGetCurrentFile() { return currentFile; }
 const char* editorGetCurrentTitle() { return currentTitle; }
 bool editorHasUnsavedChanges() { return unsavedChanges; }
 void editorSetUnsavedChanges(bool v) { unsavedChanges = v; }
+bool editorIsFull() { return noteFull; }

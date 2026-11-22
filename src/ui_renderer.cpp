@@ -421,11 +421,12 @@ static int drawEditorHeader(GfxRenderer& renderer, HalGPIO& gpio, int sw, bool t
 
   // Word count — drawn to the left of the layout indicator (or mode indicator)
   int rightX = layoutIndX;  // left edge of the right-anchored indicators
-  if (showWordCount) {
+  if (showWordCount || editorIsFull()) {
     int wc = editorGetWordCount();
     char wcBuf[24];
-    if (wc == 1) snprintf(wcBuf, sizeof(wcBuf), "1 word");
-    else         snprintf(wcBuf, sizeof(wcBuf), "%d words", wc);
+    if (editorIsFull()) snprintf(wcBuf, sizeof(wcBuf), "Note full");
+    else if (wc == 1)   snprintf(wcBuf, sizeof(wcBuf), "1 word");
+    else                snprintf(wcBuf, sizeof(wcBuf), "%d words", wc);
     int wcW = renderer.getTextAdvanceX(FONT_SMALL, wcBuf);
     int wcX = layoutIndX - 8 - wcW;
     if (wcX > 10) {
