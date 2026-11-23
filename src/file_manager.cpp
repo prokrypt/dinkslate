@@ -368,7 +368,14 @@ void updateFileTitle(const char* filename, const char* newTitle) {
     char oldPath[320], newPath[320];
     snprintf(oldPath, sizeof(oldPath), "/notes/%s", filename);
     snprintf(newPath, sizeof(newPath), "/notes/%s", newFilename);
-    SdMan.rename(oldPath, newPath);
+    if (SdMan.rename(oldPath, newPath)) {
+      // Move the backup too, or it stays behind under the old name.
+      char oldBak[336], newBak[336];
+      snprintf(oldBak, sizeof(oldBak), "%s.bak", oldPath);
+      snprintf(newBak, sizeof(newBak), "%s.bak", newPath);
+      SdMan.remove(newBak);   // stale backup of an earlier note with this name
+      SdMan.rename(oldBak, newBak);
+    }
 
     if (strcmp(editorGetCurrentFile(), filename) == 0) {
       editorSetCurrentFile(newFilename);
