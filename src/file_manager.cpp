@@ -52,6 +52,28 @@ static void clockPersist() {
   clockPrefs.putULong("base", (unsigned long)time(nullptr));
 }
 
+// Never let the clock sit behind a note already on the card. With the persisted
+// epoch gone (NVS wiped by a firmware flash, or a card from another device) it
+// restarts at the seed, and saves stamped older than the existing notes sort
+// last, or drop out of the newest MAX_FILES and are not listed at all.
+static constexpr int CLOCK_MAX_YEAR = 2036;  // ignore bogus far-future stamps: time_t ends in 2038
+
+static void clockCatchUp(uint16_t date, uint16_t fatTime) {
+  if (!date) return;
+  struct tm t = {};
+  t.tm_year = FS_YEAR(date) - 1900;
+  t.tm_mon = FS_MONTH(date) - 1;
+  t.tm_mday = FS_DAY(date);
+  t.tm_hour = FS_HOUR(fatTime);
+  t.tm_min = FS_MINUTE(fatTime);
+  t.tm_sec = FS_SECOND(fatTime);
+  time_t next = mktime(&t) + 2;  // FAT stamps tick in 2 s steps
+  if (time(nullptr) < next) {
+    struct timeval tv = { next, 0 };
+    settimeofday(&tv, nullptr);
+  }
+}
+
 // Convert filename to a readable display title.
 // "my_note_2.txt" -> "My Note 2"
 static void filenameToTitle(const char* filename, char* out, int maxLen) {
@@ -197,6 +219,7 @@ void refreshFileList(const char* select) {
 
   root.rewindDirectory();
   char name[256];
+  unsigned long newest = 0;  // newest stamp of any note, listed or not
 
   for (auto file = root.openNextFile(); file; file = root.openNextFile()) {
     file.getName(name, sizeof(name));
@@ -212,6 +235,7 @@ void refreshFileList(const char* select) {
       uint16_t d = 0, t = 0;
       file.getModifyDateTime(&d, &t);
       unsigned long modTime = ((unsigned long)d << 16) | t;
+      if (modTime > newest && FS_YEAR(d) < CLOCK_MAX_YEAR) newest = modTime;
 
       // List full: evict the oldest entry if this file is newer, so the newest
       // MAX_FILES notes always show (FAT appends new files at the directory end).
@@ -238,6 +262,7 @@ void refreshFileList(const char* select) {
   }
   root.close();
   SdMan.sleep();
+  clockCatchUp(newest >> 16, newest & 0xFFFF);
 
   // Sort newest-first (insertion sort — MAX_FILES is small).
   for (int i = 1; i < fileCount; i++) {
