@@ -573,6 +573,9 @@ void syncHandleKey(uint8_t keyCode, uint8_t modifiers) {
         selectedNet = (selectedNet - 1 + networkCount) % networkCount;
         screenDirty = true;
       } else if (keyCode == HID_KEY_ENTER && networkCount > 0) {
+        // Clear any password typed earlier this session: SAVE_PROMPT saves passwordBuf.
+        passwordBuf[0] = '\0';
+        passwordLen = 0;
         // Try saved password first
         char savedPass[MAX_PASSWORD_LEN + 1];
         if (getSavedPassword(networks[selectedNet].ssid, savedPass, sizeof(savedPass))) {
@@ -588,8 +591,6 @@ void syncHandleKey(uint8_t keyCode, uint8_t modifiers) {
           // Need password
           usedSavedPassword = false;
           autoConnectAttempted = false;
-          passwordBuf[0] = '\0';
-          passwordLen = 0;
           syncState = SyncState::PASSWORD_ENTRY;
           screenDirty = true;
         }
