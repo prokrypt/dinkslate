@@ -160,6 +160,11 @@ static void onKeyboardNotify(NimBLERemoteCharacteristic* pRemChar,
     memcpy(&newReport[2], &pData[1], 6);
   }
 
+  // Rollover/error report (key slots 0x01-0x03): too many keys down, no key state.
+  // Keep the last state, as the HID spec says; treating it as a release types the
+  // still-held keys again when the rollover clears.
+  if (newReport[2] >= 0x01 && newReport[2] <= 0x03) return;
+
 #ifndef RELEASE_BUILD
   Serial.print("KB: ");
   for (int i = 0; i < 8; i++) Serial.printf("%02X ", newReport[i]);
