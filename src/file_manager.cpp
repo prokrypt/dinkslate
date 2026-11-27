@@ -111,8 +111,10 @@ void deriveUniqueFilename(const char* title, char* out, int maxLen) {
   strncpy(base, out, maxLen - 1);
   base[strlen(base) - 4] = '\0';
 
+  // No cap: stopping at _99 returned base_99.txt, which exists, so a 100th
+  // "Untitled" note overwrote it.
   int suffix = 2;
-  while (SdMan.exists(path) && suffix <= 99) {
+  while (SdMan.exists(path)) {
     snprintf(out, maxLen, "%s_%d.txt", base, suffix++);
     snprintf(path, sizeof(path), "/notes/%s", out);
   }
