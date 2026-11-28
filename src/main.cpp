@@ -796,6 +796,7 @@ void loop() {
   if (currentState != lastState) {
     editorFindMode = false;
     deleteConfirmPending = false;
+    loadFailedNotice = false;
   }
   lastState = currentState;
 
